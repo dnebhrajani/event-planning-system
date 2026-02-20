@@ -1,9 +1,12 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { clearToken, clearRole, getRole } from "../auth/storage";
 
+const isDev = import.meta.env.DEV;
+
 const links = {
     admin: [
         { to: "/admin", label: "Dashboard" },
+        ...(isDev ? [{ to: "/admin/clubs", label: "Clubs (Dev)" }] : []),
     ],
     organizer: [
         { to: "/organizer", label: "Dashboard" },
@@ -16,7 +19,6 @@ const links = {
         { to: "/participant/profile", label: "Profile" },
         { to: "/participant/events", label: "Browse Events" },
         { to: "/participant/my-events", label: "My Events" },
-        { to: "/participant/organizers", label: "Clubs" },
         { to: "/participant/merch-orders", label: "Merch Orders" },
     ],
 };

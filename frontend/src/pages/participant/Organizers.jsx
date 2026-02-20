@@ -84,7 +84,7 @@ export default function Organizers() {
                                     <span className="badge badge-outline badge-sm">{o.category}</span>
                                     {o.description && <p className="text-sm text-base-content/70 line-clamp-2">{o.description}</p>}
                                     <div className="card-actions justify-between items-center mt-2">
-                                        <Link to={`/participant/organizers/${o._id}`} className="btn btn-ghost btn-sm">
+                                        <Link to={`/admin/clubs/${o._id}`} className="btn btn-ghost btn-sm">
                                             View Details
                                         </Link>
                                         <button

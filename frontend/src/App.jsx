@@ -154,22 +154,26 @@ export default function App() {
                     </ProtectedRoute>
                 }
             />
-            <Route
-                path="/participant/organizers"
-                element={
-                    <ProtectedRoute allowedRoles={["participant"]}>
-                        <Organizers />
-                    </ProtectedRoute>
-                }
-            />
-            <Route
-                path="/participant/organizers/:organizerId"
-                element={
-                    <ProtectedRoute allowedRoles={["participant"]}>
-                        <OrganizerDetail />
-                    </ProtectedRoute>
-                }
-            />
+            {import.meta.env.DEV && (
+                <>
+                    <Route
+                        path="/admin/clubs"
+                        element={
+                            <ProtectedRoute allowedRoles={["admin"]}>
+                                <Organizers />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/admin/clubs/:organizerId"
+                        element={
+                            <ProtectedRoute allowedRoles={["admin"]}>
+                                <OrganizerDetail />
+                            </ProtectedRoute>
+                        }
+                    />
+                </>
+            )}
             <Route
                 path="/participant/merch-orders"
                 element={
