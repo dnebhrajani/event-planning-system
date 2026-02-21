@@ -232,6 +232,23 @@ router.post("/events/:eventId/publish", async (req, res, next) => {
         );
 
         const updated = await collections.events.findOne({ _id: event._id });
+
+        // --- Discord Webhook Notification ---
+        if (orgProfile.discordWebhookUrl) {
+            try {
+                const message = {
+                    content: `🎉 **New Event Published by ${orgProfile.name}!** 🎉\n\n**${updated.name}**\n*${updated.type} Event*\n\n${updated.description || ""}\n\n📅 Starts: ${updated.startDate ? new Date(updated.startDate).toDateString() : "TBA"}\n🎟️ Eligibility: ${updated.eligibility}`
+                };
+                await fetch(orgProfile.discordWebhookUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(message)
+                });
+            } catch (webhookErr) {
+                console.warn("Discord webhook failed:", webhookErr.message);
+            }
+        }
+
         res.json({
             ...updated,
             status: computeStatus(updated),
