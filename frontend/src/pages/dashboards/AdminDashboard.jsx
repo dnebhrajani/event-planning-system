@@ -108,8 +108,13 @@ export default function AdminDashboard() {
         <div className="min-h-screen bg-base-200">
             {/* Navbar */}
             <div className="navbar bg-base-100 shadow-md px-6">
-                <div className="flex-1">
-                    <span className="text-xl font-bold">Admin Dashboard</span>
+                <div className="flex-1 gap-4">
+                    <span className="text-xl font-bold">Admin Panel</span>
+                    <div className="hidden sm:flex gap-2 flex-wrap">
+                        <button className={`btn btn-ghost btn-sm ${activeTab === 'organizers' ? "btn-active" : ""}`} onClick={() => setActiveTab('organizers')}>Dashboard</button>
+                        <button className={`btn btn-ghost btn-sm ${activeTab === 'organizers' ? "btn-active" : ""}`} onClick={() => setActiveTab('organizers')}>Manage Clubs/Organizers</button>
+                        <button className={`btn btn-ghost btn-sm ${activeTab === 'resetRequests' ? "btn-active" : ""}`} onClick={() => setActiveTab('resetRequests')}>Password Reset Requests</button>
+                    </div>
                 </div>
                 <div className="flex-none">
                     <button className="btn btn-ghost btn-sm" onClick={handleLogout}>
@@ -119,13 +124,6 @@ export default function AdminDashboard() {
             </div>
 
             <div className="max-w-5xl mx-auto p-6 space-y-6">
-                {/* Tabs */}
-                <div className="tabs tabs-boxed">
-                    <button className={`tab ${activeTab === 'organizers' ? 'tab-active' : ''}`} onClick={() => setActiveTab('organizers')}>Organizers</button>
-                    <button className={`tab ${activeTab === 'resetRequests' ? 'tab-active' : ''}`} onClick={() => setActiveTab('resetRequests')}>
-                        Password Resets {resetRequests.filter(r => r.status === 'pending').length > 0 ? `(${resetRequests.filter(r => r.status === 'pending').length})` : ''}
-                    </button>
-                </div>
 
                 {error && (
                     <div className="alert alert-error text-sm">
@@ -300,7 +298,7 @@ export default function AdminDashboard() {
                                                 <td className="text-sm">{r.email}</td>
                                                 <td>
                                                     <span className={`badge badge-sm ${r.status === 'pending' ? 'badge-warning' :
-                                                            r.status === 'approved' ? 'badge-success' : 'badge-error'
+                                                        r.status === 'approved' ? 'badge-success' : 'badge-error'
                                                         }`}>{r.status}</span>
                                                 </td>
                                                 <td className="text-sm">{new Date(r.createdAt).toLocaleString()}</td>

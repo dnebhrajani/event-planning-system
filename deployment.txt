@@ -1,0 +1,7 @@
+Deployment URLs
+
+Frontend URL: https://event-planning-system-frontend.vercel.app/
+Backend API Base URL: https://event-planning-system-api.onrender.com/
+Database: MongoDB Atlas (connection via MONGO_URI environment variable)
+
+Note: Replace the dummy URLs above with the actual deployed links if Vercel/Render automatic deployments are hooked to this repository.
