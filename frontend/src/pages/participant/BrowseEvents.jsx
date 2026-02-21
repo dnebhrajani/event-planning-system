@@ -55,7 +55,7 @@ export default function BrowseEvents() {
     const EventCard = ({ e, isTrending }) => (
         <Link to={`/participant/events/${e._id}`} className={`card bg-base-100 shadow hover:shadow-lg transition-transform ${isTrending ? "border border-primary min-w-[280px]" : ""}`}>
             <div className="card-body">
-                {isTrending && <div className="badge badge-primary mb-2">🔥 Trending</div>}
+                {isTrending && <div className="badge badge-primary mb-2">Trending</div>}
                 <h2 className="card-title text-lg leading-tight">{e.name}</h2>
                 <p className="text-sm text-base-content/60">{e.organizerName}</p>
                 <div className="flex flex-wrap gap-2 mt-2">
@@ -63,7 +63,7 @@ export default function BrowseEvents() {
                     <span className="badge badge-outline">{e.eligibility}</span>
                 </div>
                 <div className="text-sm mt-3 pt-3 border-t border-base-200">
-                    <p>🕒 {e.startDate ? new Date(e.startDate).toLocaleDateString() : "TBA"}</p>
+                    <p>{e.startDate ? new Date(e.startDate).toLocaleDateString() : "TBA"}</p>
                     {isTrending ? (
                         <p className="text-primary font-medium">{e.recentRegistrations} recent signups</p>
                     ) : (e.registrationCount > 0 && (
@@ -120,7 +120,7 @@ export default function BrowseEvents() {
                         {/* Trending Section */}
                         {trending.length > 0 && !search && filterCategory === "ALL" && (
                             <section>
-                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">🔥 Trending (Top 5 / 24h)</h2>
+                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">Trending (Top 5 / 24h)</h2>
                                 <div className="flex gap-4 overflow-x-auto pb-4 snap-x">
                                     {trending.map(e => (
                                         <div key={e._id} className="snap-start shrink-0">
