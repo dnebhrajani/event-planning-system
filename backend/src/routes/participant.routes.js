@@ -29,7 +29,7 @@ function generateTicketId() {
 }
 
 // ─── GET /api/participant/events ────────────────────────────────────────────
-// Browse published events with search & filters
+// Browse published events with search, filters, and preference-based ordering
 router.get("/events", async (req, res, next) => {
     try {
         const {
@@ -38,15 +38,20 @@ router.get("/events", async (req, res, next) => {
             eligibility,
             startAfter,
             endBefore,
+            followedOnly,
             sort,
         } = req.query;
 
-        // Only show published / ongoing events (not drafts or completed)
+        // Get participant profile for preferences
+        const profile = await collections.participant_profiles.findOne({
+            userId: new ObjectId(req.user.userId),
+        });
+
+        // Only show published / ongoing events
         const filter = {
             publishedAt: { $ne: null },
         };
 
-        // Search by event name or organizer name (case-insensitive regex)
         if (search) {
             const regex = { $regex: search, $options: "i" };
             filter.$or = [{ name: regex }, { organizerName: regex }];
@@ -65,16 +70,23 @@ router.get("/events", async (req, res, next) => {
             filter.endDate = { ...(filter.endDate || {}), $lte: new Date(endBefore) };
         }
 
-        const sortOpt = sort === "registrations"
-            ? { registrationCount: -1 }
-            : { startDate: 1 };
+        // Apply followed clubs filter
+        if (followedOnly === "true") {
+            if (profile?.followedOrganizers?.length > 0) {
+                // Ensure objects IDs are mapped safely
+                const orgIds = profile.followedOrganizers.map((id) =>
+                    typeof id === "string" ? new ObjectId(id) : id
+                );
+                filter.organizerId = { $in: orgIds };
+            } else {
+                // Following no one, return empty
+                return res.json([]);
+            }
+        }
 
-        const events = await collections.events
-            .find(filter)
-            .sort(sortOpt)
-            .toArray();
+        let events = await collections.events.find(filter).toArray();
 
-        // Attach computed status and registration count
+        // Compute registration counts
         const eventIds = events.map((e) => e._id);
         const regCounts = await collections.registrations
             .aggregate([
@@ -84,13 +96,49 @@ router.get("/events", async (req, res, next) => {
             .toArray();
         const regMap = new Map(regCounts.map((r) => [r._id.toString(), r.count]));
 
-        const result = events.map((e) => ({
-            ...e,
-            status: computeStatus(e),
-            registrationCount: regMap.get(e._id.toString()) || 0,
-        }));
+        // Calculate preference scores for intelligent ordering
+        const interests = new Set(profile?.areasOfInterest || []);
+        const followedOrgs = new Set(
+            (profile?.followedOrganizers || []).map((id) => id.toString())
+        );
 
-        res.json(result);
+        events = events.map((e) => {
+            let prefScore = 0;
+            if (followedOrgs.has(e.organizerId?.toString())) prefScore += 2;
+
+            if (e.tags && Array.isArray(e.tags)) {
+                for (const tag of e.tags) {
+                    if (interests.has(tag)) prefScore += 1;
+                }
+            }
+
+            return {
+                ...e,
+                status: computeStatus(e),
+                registrationCount: regMap.get(e._id.toString()) || 0,
+                __prefScore: prefScore, // strictly internal score used for sorting
+            };
+        });
+
+        // Sorting Matrix
+        if (sort === "registrations") {
+            events.sort((a, b) => b.registrationCount - a.registrationCount);
+        } else {
+            // Default: primary sort by matched preferences, secondary by standard chronological date
+            events.sort((a, b) => {
+                if (b.__prefScore !== a.__prefScore) {
+                    return b.__prefScore - a.__prefScore;
+                }
+                const aDate = a.startDate ? new Date(a.startDate).getTime() : Infinity;
+                const bDate = b.startDate ? new Date(b.startDate).getTime() : Infinity;
+                return aDate - bDate;
+            });
+        }
+
+        // Cleanup private variable
+        events.forEach(e => delete e.__prefScore);
+
+        res.json(events);
     } catch (err) {
         next(err);
     }

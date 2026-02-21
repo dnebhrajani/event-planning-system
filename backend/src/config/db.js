@@ -67,9 +67,25 @@ export async function connectDb() {
   await collections.reset_requests.createIndex({ organizerUserId: 1 });
   await collections.forum_messages.createIndex({ eventId: 1, createdAt: 1 });
 
+  // Auto-seed Admin if database is completely empty
+  const adminExists = await collections.users.findOne({ role: "admin" });
+  if (!adminExists) {
+    const bcrypt = await import("bcrypt");
+    const passwordHash = await bcrypt.hash("admin123", 10);
+    const now = new Date();
+    await collections.users.insertOne({
+      email: "admin@iiit.ac.in",
+      passwordHash,
+      role: "admin",
+      isDisabled: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    console.log("🌱 Root Admin seeded: admin@iiit.ac.in / admin123");
+  }
+
   console.log(`✅ Connected to MongoDB – database: ${dbName}`);
   return db;
-
 }
 
 /**
