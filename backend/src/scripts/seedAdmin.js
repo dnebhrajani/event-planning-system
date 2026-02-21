@@ -6,7 +6,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { connectDb, collections } from "../config/db.js";
 
 const SALT_ROUNDS = 10;
