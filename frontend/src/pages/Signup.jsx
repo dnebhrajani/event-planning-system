@@ -130,7 +130,7 @@ export default function Signup() {
                             {form.participantType === "IIIT" && (
                                 <label className="label">
                                     <span className="label-text-alt text-warning">
-                                        Must use an @iiit.ac.in email
+                                        Must use an email ending in .iiit.ac.in
                                     </span>
                                 </label>
                             )}
@@ -160,6 +160,8 @@ export default function Signup() {
                                 className="input input-bordered w-full"
                                 value={form.contact}
                                 onChange={handleChange}
+                                pattern="\d{10}"
+                                title="Contact must be exactly 10 digits"
                                 required
                             />
                         </div>

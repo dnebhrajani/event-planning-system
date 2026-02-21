@@ -5,11 +5,13 @@ import nodemailer from "nodemailer";
  * Throws if SMTP config is missing.
  */
 function createTransporter() {
-    const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+    const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
+    const SMTP_PORT = process.env.SMTP_PORT || 465;
+    const { SMTP_USER, SMTP_PASS } = process.env;
 
-    if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+    if (!SMTP_USER || !SMTP_PASS) {
         throw new Error(
-            "SMTP configuration missing. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env"
+            "SMTP credentials missing. Set SMTP_USER and SMTP_PASS in .env or Render dashboard"
         );
     }
 

@@ -11,8 +11,7 @@ export function normalizeEmail(email) {
  */
 export function isValidIIITEmail(email) {
     const normalized = normalizeEmail(email);
-    // Accept any local-part followed by @iiit.ac.in (or subdomains like @students.iiit.ac.in)
-    return /^[^\s@]+@([a-zA-Z0-9-]+\.)*iiit\.ac\.in$/.test(normalized);
+    return /\.iiit\.ac\.in$/.test(normalized);
 }
 
 /**
@@ -35,10 +34,13 @@ export function validateRegisterInput({
         return "participantType must be either IIIT or NON_IIIT";
     }
     if (participantType === "IIIT" && !isValidIIITEmail(email)) {
-        return "IIIT participants must use a valid @iiit.ac.in email address";
+        return "IIIT participants must use an email ending in .iiit.ac.in";
     }
     if (password.length < 6) {
         return "Password must be at least 6 characters";
+    }
+    if (!/^\d{10}$/.test(contact)) {
+        return "Contact must be exactly 10 digits";
     }
     return null;
 }

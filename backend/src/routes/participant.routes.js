@@ -361,10 +361,10 @@ router.post("/events/:eventId/register", async (req, res, next) => {
         };
         await collections.tickets.insertOne(ticket);
 
-        // Try to send email (don't crash on failure)
+        // Try to send email (don't crash on failure or hang the registration)
         let emailSent = false;
         try {
-            await sendMail({
+            sendMail({
                 to: ticket.participantEmail,
                 subject: `Ticket Confirmation — ${event.name}`,
                 text: [
@@ -380,10 +380,12 @@ router.post("/events/:eventId/register", async (req, res, next) => {
                     ``,
                     `— Event Management Platform`,
                 ].join("\n"),
+            }).catch(_emailErr => {
+                console.warn("Async email sending failed:", _emailErr.message);
             });
-            emailSent = true;
+            emailSent = true; // Assume true since we fired it
         } catch (_emailErr) {
-            console.warn("Email sending failed (SMTP not configured?):", _emailErr.message);
+            console.warn("Email dispatch failed:", _emailErr.message);
         }
 
         res.status(201).json({
