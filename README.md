@@ -8,7 +8,7 @@ This platform provides three distinct role-based interfaces (Admin, Organizer, P
 
 ---
 
-## 🛠 Libraries, Frameworks, and Modules
+## Libraries, Frameworks, and Modules
 
 ### Frontend
 * **React (Vite)**: Selected for highly optimized, instant hot-module-replacement (HMR) during development and blistering fast production builds.
@@ -30,7 +30,7 @@ This platform provides three distinct role-based interfaces (Admin, Organizer, P
 
 ---
 
-## 🚀 Advanced Features Implemented (30 Marks total)
+## Advanced Features Implemented (30 Marks total)
 
 As per Section 13 instructions, exactly 30 marks of advanced modules were carefully crafted.
 
@@ -57,7 +57,7 @@ As per Section 13 instructions, exactly 30 marks of advanced modules were carefu
 
 ---
 
-## ⚙️ Setup and Installation Instructions
+## Setup and Installation Instructions
 
 ### 1. Pre-requisites
 * **Node.js**: v18.x or above.

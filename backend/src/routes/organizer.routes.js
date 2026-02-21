@@ -237,7 +237,7 @@ router.post("/events/:eventId/publish", async (req, res, next) => {
         if (orgProfile.discordWebhookUrl) {
             try {
                 const message = {
-                    content: `🎉 **New Event Published by ${orgProfile.name}!** 🎉\n\n**${updated.name}**\n*${updated.type} Event*\n\n${updated.description || ""}\n\n📅 Starts: ${updated.startDate ? new Date(updated.startDate).toDateString() : "TBA"}\n🎟️ Eligibility: ${updated.eligibility}`
+                    content: `**New Event Published by ${orgProfile.name}!**\n\n**${updated.name}**\n*${updated.type} Event*\n\n${updated.description || ""}\n\nStarts: ${updated.startDate ? new Date(updated.startDate).toDateString() : "TBA"}\nEligibility: ${updated.eligibility}`
                 };
                 await fetch(orgProfile.discordWebhookUrl, {
                     method: "POST",

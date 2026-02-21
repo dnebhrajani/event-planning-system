@@ -16,7 +16,7 @@ async function seedAdmin() {
     const password = process.env.ADMIN_PASSWORD;
 
     if (!email || !password) {
-        console.error("❌ ADMIN_EMAIL and ADMIN_PASSWORD must be set in .env");
+        console.error("ERROR: ADMIN_EMAIL and ADMIN_PASSWORD must be set in .env");
         process.exit(1);
     }
 
@@ -25,7 +25,7 @@ async function seedAdmin() {
 
         const existing = await collections.users.findOne({ email });
         if (existing) {
-            console.log(`ℹ️  Admin user already exists (${email}). Skipping.`);
+            console.log(`INFO: Admin user already exists (${email}). Skipping.`);
             process.exit(0);
         }
 
@@ -41,10 +41,10 @@ async function seedAdmin() {
             updatedAt: now,
         });
 
-        console.log(`✅ Admin user created: ${email}`);
+        console.log(`SUCCESS: Admin user created: ${email}`);
         process.exit(0);
     } catch (err) {
-        console.error("❌ Seed failed:", err);
+        console.error("ERROR: Seed failed:", err);
         process.exit(1);
     }
 }

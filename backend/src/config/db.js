@@ -81,10 +81,10 @@ export async function connectDb() {
       createdAt: now,
       updatedAt: now,
     });
-    console.log("🌱 Root Admin seeded: admin@iiit.ac.in / admin123");
+    console.log("Root Admin seeded: admin@iiit.ac.in / admin123");
   }
 
-  console.log(`✅ Connected to MongoDB – database: ${dbName}`);
+  console.log(`Connected to MongoDB – database: ${dbName}`);
   return db;
 }
 
