@@ -60,7 +60,7 @@ router.get("/events", async (req, res, next) => {
         if (eventType) filter.type = eventType;
 
         if (eligibility && eligibility !== "ALL") {
-            filter.eligibility = { $in: [eligibility, "ALL"] };
+            filter.eligibility = eligibility;
         }
 
         if (startAfter) {
@@ -361,10 +361,10 @@ router.post("/events/:eventId/register", async (req, res, next) => {
         };
         await collections.tickets.insertOne(ticket);
 
-        // Try to send email (don't crash on failure or hang the registration)
+        // Try to send email (don't crash on failure)
         let emailSent = false;
         try {
-            sendMail({
+            await sendMail({
                 to: ticket.participantEmail,
                 subject: `Ticket Confirmation — ${event.name}`,
                 text: [
@@ -380,10 +380,8 @@ router.post("/events/:eventId/register", async (req, res, next) => {
                     ``,
                     `— Event Management Platform`,
                 ].join("\n"),
-            }).catch(_emailErr => {
-                console.warn("Async email sending failed:", _emailErr.message);
             });
-            emailSent = true; // Assume true since we fired it
+            emailSent = true;
         } catch (_emailErr) {
             console.warn("Email dispatch failed:", _emailErr.message);
         }

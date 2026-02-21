@@ -118,7 +118,7 @@ export default function BrowseEvents() {
                 ) : (
                     <>
                         {/* Trending Section */}
-                        {trending.length > 0 && !search && filterCategory === "ALL" && (
+                        {trending.length > 0 && !search && !eventType && !eligibility && !dateRange.start && !dateRange.end && filterCategory === "ALL" && (
                             <section>
                                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2">Trending (Top 5 / 24h)</h2>
                                 <div className="flex gap-4 overflow-x-auto pb-4 snap-x">

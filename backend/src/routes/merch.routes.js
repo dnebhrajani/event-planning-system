@@ -404,7 +404,7 @@ router.post(
                 { $set: { status: "APPROVED", ticketId, updatedAt: now } }
             );
 
-            // Try email (don't hang the request)
+            // Try email
             let emailSent = false;
             try {
                 const user = await collections.users.findOne({ _id: order.participantId });
@@ -412,7 +412,7 @@ router.post(
                     userId: order.participantId,
                 });
                 if (user?.email) {
-                    sendMail({
+                    await sendMail({
                         to: user.email,
                         subject: `Order Approved - ${event.name}`,
                         text: [
@@ -425,7 +425,7 @@ router.post(
                             "",
                             "-- Event Management Platform",
                         ].join("\n"),
-                    }).catch(err => console.warn("Async email failed:", err.message));
+                    });
                     emailSent = true;
                 }
             } catch (_) {
