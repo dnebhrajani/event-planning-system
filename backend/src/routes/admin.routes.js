@@ -144,9 +144,7 @@ router.patch("/organizers/:organizerId/disable", async (req, res, next) => {
 });
 
 // ─── DELETE /api/admin/organizers/:organizerId ──────────────────────────────
-// Delete an organizer profile and linked user.
-// TODO: Later we must cascade-delete organizer events, registrations,
-//       tickets, and any related data before removing the organizer.
+// Delete an organizer profile, linked user, and cascade-delete all their events.
 router.delete("/organizers/:organizerId", async (req, res, next) => {
     try {
         const { organizerId } = req.params;
@@ -158,11 +156,34 @@ router.delete("/organizers/:organizerId", async (req, res, next) => {
             return res.status(404).json({ error: "Organizer not found" });
         }
 
+        const orgId = organizer._id;
+
+        // Find all events by this organizer
+        const events = await collections.events.find({ organizerId: orgId }).toArray();
+        const eventIds = events.map(e => e._id);
+        const eventIdStrs = eventIds.map(id => id.toString());
+        const allEventIdsIdAndStr = [...eventIds, ...eventIdStrs];
+
+        if (eventIds.length > 0) {
+            // Cascade delete event-related data matching either ObjectId or string
+            await collections.events.deleteMany({ organizerId: orgId });
+            await collections.tickets.deleteMany({ eventId: { $in: allEventIdsIdAndStr } });
+            await collections.registrations.deleteMany({ eventId: { $in: allEventIdsIdAndStr } });
+            await collections.merch_orders?.deleteMany({ eventId: { $in: allEventIdsIdAndStr } });
+            await collections.forms?.deleteMany({ eventId: { $in: allEventIdsIdAndStr } });
+            await collections.form_responses?.deleteMany({ eventId: { $in: allEventIdsIdAndStr } });
+            await collections.attendance?.deleteMany({ eventId: { $in: allEventIdsIdAndStr } });
+            await collections.forum_messages?.deleteMany({ eventId: { $in: allEventIdsIdAndStr } });
+        }
+
+        // Delete password reset requests
+        await collections.reset_requests?.deleteMany({ organizerUserId: organizer.userId });
+
         // Delete organizer profile and linked user
-        await collections.organizers.deleteOne({ _id: organizer._id });
+        await collections.organizers.deleteOne({ _id: orgId });
         await collections.users.deleteOne({ _id: organizer.userId });
 
-        res.json({ message: "Organizer deleted successfully" });
+        res.json({ message: "Organizer and all associated events deleted successfully" });
     } catch (err) {
         next(err);
     }
