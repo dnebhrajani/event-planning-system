@@ -11,6 +11,8 @@ export default function ManageEvent() {
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState("overview");
     const [pFilter, setPFilter] = useState({ participantType: "", attendance: "" });
+    const [selectedParticipant, setSelectedParticipant] = useState(null);
+    const [openingFile, setOpeningFile] = useState(null);
 
     useEffect(() => {
         (async () => {
@@ -44,6 +46,27 @@ export default function ManageEvent() {
     useEffect(() => {
         if (tab === "participants") fetchParticipants();
     }, [tab, pFilter]);
+
+    const handleViewFile = async (url) => {
+        if (!url) return;
+
+        // If it's an explicitly authenticated PDF, we MUST fetch a signed URL to bypass Cloudinary public ACL blocks
+        if (url.toLowerCase().endsWith(".pdf") && url.includes("/authenticated/")) {
+            setOpeningFile(url);
+            try {
+                const { data } = await api.get('/api/forms/signed-url', { params: { url } });
+                window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+            } catch (err) {
+                console.error("Error fetching signed URL:", err);
+                alert("Failed to securely open PDF. Please try again.");
+            } finally {
+                setOpeningFile(null);
+            }
+        } else {
+            // Legacy files or standard publicly exposed images open fine normally
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+    };
 
     const exportCsv = async () => {
         try {
@@ -195,6 +218,7 @@ export default function ManageEvent() {
                                         <th>Type</th>
                                         <th>Ticket</th>
                                         <th>Attended</th>
+                                        <th>Answers</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -205,12 +229,82 @@ export default function ManageEvent() {
                                             <td><span className="badge badge-sm badge-outline">{p.participantType}</span></td>
                                             <td><code className="text-xs">{p.ticketId}</code></td>
                                             <td>{p.attended ? "Yes" : "No"}</td>
+                                            <td>
+                                                {p.formAnswers || p.paymentProofUrl ? (
+                                                    <button
+                                                        className="btn btn-xs btn-outline"
+                                                        onClick={() => setSelectedParticipant(p)}
+                                                    >
+                                                        View Details
+                                                    </button>
+                                                ) : (
+                                                    <span className="text-xs text-base-content/50">None</span>
+                                                )}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                             {participants.length === 0 && <p className="text-center py-6 text-base-content/60">No participants yet</p>}
                         </div>
+                    </div>
+                )}
+
+                {/* Answers Modal */}
+                {selectedParticipant && (
+                    <div className="modal modal-open">
+                        <div className="modal-box">
+                            <h3 className="font-bold text-lg mb-4">
+                                Participant Details: {selectedParticipant.firstName} {selectedParticipant.lastName}
+                            </h3>
+                            <div className="space-y-3">
+                                {selectedParticipant.formAnswers && Object.entries(selectedParticipant.formAnswers).map(([question, answer]) => (
+                                    <div key={question} className="bg-base-200 p-3 rounded-lg">
+                                        <p className="text-xs font-semibold text-base-content/70 mb-1">{question}</p>
+                                        {typeof answer === 'string' && answer.startsWith('http') ? (
+                                            <button
+                                                onClick={() => handleViewFile(answer)}
+                                                disabled={openingFile === answer}
+                                                className="text-primary link link-hover break-all flex items-center gap-1 text-left"
+                                            >
+                                                {openingFile === answer ? (
+                                                    <span className="loading loading-spinner loading-xs"></span>
+                                                ) : (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                )}
+                                                View Uploaded File
+                                            </button>
+                                        ) : typeof answer === 'boolean' ? (
+                                            <p>{answer ? "Yes" : "No"}</p>
+                                        ) : (
+                                            <p>{String(answer)}</p>
+                                        )}
+                                    </div>
+                                ))}
+
+                                {selectedParticipant.paymentProofUrl && (
+                                    <div className="bg-base-200 p-3 rounded-lg">
+                                        <p className="text-xs font-semibold text-base-content/70 mb-1">Payment Proof</p>
+                                        <button
+                                            onClick={() => handleViewFile(selectedParticipant.paymentProofUrl)}
+                                            disabled={openingFile === selectedParticipant.paymentProofUrl}
+                                            className="text-primary link link-hover break-all flex items-center gap-1 text-left"
+                                        >
+                                            {openingFile === selectedParticipant.paymentProofUrl ? (
+                                                <span className="loading loading-spinner loading-xs"></span>
+                                            ) : (
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                            )}
+                                            View Uploaded Payment Proof
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="modal-action">
+                                <button className="btn" onClick={() => setSelectedParticipant(null)}>Close</button>
+                            </div>
+                        </div>
+                        <div className="modal-backdrop" onClick={() => setSelectedParticipant(null)}></div>
                     </div>
                 )}
             </div>

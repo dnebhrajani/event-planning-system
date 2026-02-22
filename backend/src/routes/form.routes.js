@@ -2,6 +2,10 @@ import { Router } from "express";
 import { ObjectId } from "mongodb";
 import { collections } from "../config/db.js";
 import { authRequired, requireRole } from "../middleware/auth.js";
+import cloudinary from "../config/cloudinary.js";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 const router = Router();
 
@@ -147,9 +151,75 @@ router.post(
             if (!filename || !data)
                 return res.status(400).json({ error: "filename and data (base64) required" });
 
-            // In production, store to disk/cloud. For this project, return data URI.
-            const url = `data:${mimetype || "application/octet-stream"};base64,${data}`;
-            res.json({ url, filename });
+            if (!mimetype || (!mimetype.startsWith("image/") && mimetype !== "application/pdf")) {
+                return res.status(400).json({ error: "Only images and PDFs are allowed." });
+            }
+
+            const isPdf = mimetype === "application/pdf";
+
+            const uploadParams = {
+                folder: "event_files",
+                resource_type: isPdf ? "raw" : "auto"
+            };
+            if (isPdf) {
+                uploadParams.type = "authenticated";
+            }
+
+            let uploadRes;
+            if (isPdf) {
+                // Raw files in Cloudinary don't auto-append extensions from base64 streams.
+                // We physically construct a temporary file to bypass corrupted raw deliveries.
+                const safeName = filename.replace(/[^a-zA-Z0-9]/g, "_").replace(/_pdf$/i, "");
+                uploadParams.public_id = `${safeName}_${Date.now()}.pdf`;
+
+                const tempFilePath = path.join(os.tmpdir(), `upload_${Date.now()}_${safeName}.pdf`);
+                // Strip metadata prefix if the frontend sent the complete dataUri instead of raw base64
+                const base64Data = data.replace(/^data:[a-zA-Z0-9\/+-]+;base64,/, "");
+                const buffer = Buffer.from(base64Data, "base64");
+                fs.writeFileSync(tempFilePath, buffer);
+
+                try {
+                    uploadRes = await cloudinary.uploader.upload(tempFilePath, uploadParams);
+                } finally {
+                    if (fs.existsSync(tempFilePath)) {
+                        fs.unlinkSync(tempFilePath);
+                    }
+                }
+            } else {
+                const dataUri = `data:${mimetype};base64,${data}`;
+                uploadRes = await cloudinary.uploader.upload(dataUri, uploadParams);
+            }
+
+            res.json({ url: uploadRes.secure_url, filename });
+        } catch (err) {
+            next(err);
+        }
+    }
+);
+
+// ─── Generate Signed URL for Authenticated PDF Delivery ───────────────────
+// GET /api/forms/signed-url?url=...
+router.get(
+    "/signed-url",
+    authRequired,
+    async (req, res, next) => {
+        try {
+            const { url } = req.query;
+            if (!url) return res.status(400).json({ error: "Cloudinary URL required" });
+
+            // Extract public_id
+            // Handles URLs like .../raw/authenticated/v1771783449/event_files/test.pdf
+            const match = url.match(/\/v\d+\/(.+)$/);
+            if (!match) return res.status(400).json({ error: "Invalid Cloudinary URL formatting" });
+            const publicId = match[1];
+
+            const signedUrl = cloudinary.utils.private_download_url(publicId, "pdf", {
+                resource_type: "raw",
+                type: "authenticated",
+                expires_at: Math.floor(Date.now() / 1000) + 3600 // 1 hour expiration
+            });
+
+            res.json({ signedUrl });
         } catch (err) {
             next(err);
         }

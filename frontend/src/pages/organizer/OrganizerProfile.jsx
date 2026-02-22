@@ -129,8 +129,16 @@ export default function OrganizerProfile() {
                             <textarea name="description" className="textarea textarea-bordered w-full" rows={3} value={form.description} onChange={handleChange} />
                         </div>
                         <div className="form-control">
-                            <label className="label"><span className="label-text">Contact Email</span></label>
-                            <input type="email" name="contactEmail" className="input input-bordered w-full" value={form.contactEmail} onChange={handleChange} />
+                            <label className="label">
+                                <span className="label-text">Contact Email</span>
+                            </label>
+                            <input
+                                type="email"
+                                name="contactEmail"
+                                className="input input-bordered w-full"
+                                value={form.contactEmail}
+                                onChange={handleChange}
+                            />
                         </div>
                         <div className="form-control">
                             <label className="label"><span className="label-text">Discord Webhook URL</span></label>

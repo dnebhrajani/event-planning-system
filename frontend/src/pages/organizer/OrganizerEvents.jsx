@@ -81,12 +81,15 @@ export default function OrganizerEvents() {
                                             </span>
                                         </td>
                                         <td className="flex gap-1">
+                                            <Link to={`/organizer/events/${e._id}/manage`} className="btn btn-xs btn-primary">
+                                                Manage
+                                            </Link>
                                             {e.status === "Draft" && (
                                                 <>
                                                     <Link to={`/organizer/events/${e._id}/edit`} className="btn btn-xs btn-outline">
                                                         Edit
                                                     </Link>
-                                                    <button className="btn btn-xs btn-primary" onClick={() => handlePublish(e._id)}>
+                                                    <button className="btn btn-xs btn-secondary" onClick={() => handlePublish(e._id)}>
                                                         Publish
                                                     </button>
                                                 </>

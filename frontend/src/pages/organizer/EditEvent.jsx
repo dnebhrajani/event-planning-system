@@ -11,14 +11,21 @@ export default function EditEvent() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
     const [status, setStatus] = useState("");
+    const [organizerId, setOrganizerId] = useState("");
+    const [merchItems, setMerchItems] = useState([]);
 
     useEffect(() => {
         (async () => {
             try {
-                const { data } = await api.get("/api/organizer/events");
-                const ev = data.find((e) => e._id === eventId);
+                const [eventsRes, profileRes] = await Promise.all([
+                    api.get("/api/organizer/events"),
+                    api.get("/api/organizer/profile")
+                ]);
+                setOrganizerId(profileRes.data.customOrganizerId || "");
+                const ev = eventsRes.data.find((e) => e._id === eventId);
                 if (!ev) { setError("Event not found"); return; }
                 setStatus(ev.status);
+                setMerchItems(ev.merchItems || []);
                 setForm({
                     name: ev.name || "",
                     type: ev.type || "NORMAL",
@@ -51,6 +58,26 @@ export default function EditEvent() {
 
     const handleSave = async () => {
         setError("");
+
+        // Frontend validation for ALL fields
+        if (!form.name || !form.description || !form.startDate || !form.endDate || !form.registrationDeadline || form.registrationLimit === "" || form.registrationFee === "" || !form.tags) {
+            setError("All fields with an asterisk (*) are mandatory.");
+            return;
+        }
+
+        if (form.type === "MERCH") {
+            if (merchItems.length === 0) {
+                setError("Merchandise events must have at least one merch item.");
+                return;
+            }
+            for (const item of merchItems) {
+                if (!item.name || item.price === "" || item.stock === "" || item.perUserLimit === "") {
+                    setError("All fields for every merch item are mandatory.");
+                    return;
+                }
+            }
+        }
+
         setSaving(true);
         try {
             const payload = { ...form };
@@ -64,6 +91,17 @@ export default function EditEvent() {
             if (payload.registrationFee === "") delete payload.registrationFee;
             else payload.registrationFee = Number(payload.registrationFee);
 
+            if (form.type === "MERCH") {
+                payload.merchItems = merchItems.map((m) => ({
+                    name: m.name,
+                    price: Number(m.price),
+                    stock: Number(m.stock),
+                    perUserLimit: Number(m.perUserLimit)
+                }));
+            } else {
+                payload.merchItems = []; // clear if somehow switched to NORMAL
+            }
+
             await api.patch(`/api/organizer/events/${eventId}`, payload);
             navigate("/organizer/my-events");
         } catch (err) {
@@ -75,6 +113,26 @@ export default function EditEvent() {
 
     const handlePublish = async () => {
         setError("");
+
+        // Frontend validation for ALL fields
+        if (!form.name || !form.description || !form.startDate || !form.endDate || !form.registrationDeadline || form.registrationLimit === "" || form.registrationFee === "" || !form.tags) {
+            setError("All fields with an asterisk (*) are mandatory.");
+            return;
+        }
+
+        if (form.type === "MERCH") {
+            if (merchItems.length === 0) {
+                setError("Merchandise events must have at least one merch item.");
+                return;
+            }
+            for (const item of merchItems) {
+                if (!item.name || item.price === "" || item.stock === "" || item.perUserLimit === "") {
+                    setError("All fields for every merch item are mandatory.");
+                    return;
+                }
+            }
+        }
+
         setSaving(true);
         try {
             // Save first, then publish
@@ -88,6 +146,17 @@ export default function EditEvent() {
             else payload.registrationLimit = Number(payload.registrationLimit);
             if (payload.registrationFee === "") delete payload.registrationFee;
             else payload.registrationFee = Number(payload.registrationFee);
+
+            if (form.type === "MERCH") {
+                payload.merchItems = merchItems.map((m) => ({
+                    name: m.name,
+                    price: Number(m.price),
+                    stock: Number(m.stock),
+                    perUserLimit: Number(m.perUserLimit)
+                }));
+            } else {
+                payload.merchItems = [];
+            }
 
             await api.patch(`/api/organizer/events/${eventId}`, payload);
             await api.post(`/api/organizer/events/${eventId}/publish`);
@@ -138,8 +207,13 @@ export default function EditEvent() {
                 <div className="card bg-base-100 shadow">
                     <div className="card-body space-y-3">
                         <div className="form-control">
+                            <label className="label"><span className="label-text">Organizer ID</span></label>
+                            <input type="text" className="input input-bordered w-full bg-base-200" value={organizerId} disabled />
+                        </div>
+
+                        <div className="form-control">
                             <label className="label"><span className="label-text">Event Name *</span></label>
-                            <input type="text" name="name" className="input input-bordered w-full" value={form.name} onChange={handleChange} disabled={!isDraft} />
+                            <input type="text" name="name" className="input input-bordered w-full" value={form.name} onChange={handleChange} disabled={!isDraft} required />
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -161,42 +235,141 @@ export default function EditEvent() {
                         </div>
 
                         <div className="form-control">
-                            <label className="label"><span className="label-text">Description</span></label>
-                            <textarea name="description" className="textarea textarea-bordered w-full" rows={3} value={form.description} onChange={handleChange} />
+                            <label className="label"><span className="label-text">Description *</span></label>
+                            <textarea name="description" className="textarea textarea-bordered w-full" rows={3} value={form.description} onChange={handleChange} required />
                         </div>
 
                         <div className="grid grid-cols-3 gap-3">
                             <div className="form-control">
-                                <label className="label"><span className="label-text">Start Date</span></label>
-                                <input type="datetime-local" name="startDate" className="input input-bordered w-full" value={form.startDate} onChange={handleChange} disabled={!isDraft} />
+                                <label className="label"><span className="label-text">Start Date *</span></label>
+                                <input type="datetime-local" name="startDate" className="input input-bordered w-full" value={form.startDate} onChange={handleChange} disabled={!isDraft} required />
                             </div>
                             <div className="form-control">
-                                <label className="label"><span className="label-text">End Date</span></label>
-                                <input type="datetime-local" name="endDate" className="input input-bordered w-full" value={form.endDate} onChange={handleChange} disabled={!isDraft} />
+                                <label className="label"><span className="label-text">End Date *</span></label>
+                                <input type="datetime-local" name="endDate" className="input input-bordered w-full" value={form.endDate} onChange={handleChange} disabled={!isDraft} required />
                             </div>
                             <div className="form-control">
-                                <label className="label"><span className="label-text">Reg. Deadline</span></label>
-                                <input type="datetime-local" name="registrationDeadline" className="input input-bordered w-full" value={form.registrationDeadline} onChange={handleChange} />
+                                <label className="label"><span className="label-text">Reg. Deadline *</span></label>
+                                <input type="datetime-local" name="registrationDeadline" className="input input-bordered w-full" value={form.registrationDeadline} onChange={handleChange} required />
                             </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
                             <div className="form-control">
-                                <label className="label"><span className="label-text">Registration Limit</span></label>
-                                <input type="number" name="registrationLimit" className="input input-bordered w-full" value={form.registrationLimit} onChange={handleChange} min="1" />
+                                <label className="label"><span className="label-text">Registration Limit *</span></label>
+                                <input type="number" name="registrationLimit" className="input input-bordered w-full" value={form.registrationLimit} onChange={handleChange} min="1" required />
                             </div>
                             <div className="form-control">
-                                <label className="label"><span className="label-text">Registration Fee</span></label>
-                                <input type="number" name="registrationFee" className="input input-bordered w-full" value={form.registrationFee} onChange={handleChange} min="0" step="0.01" disabled={!isDraft} />
+                                <label className="label"><span className="label-text">Registration Fee *</span></label>
+                                <input type="number" name="registrationFee" className="input input-bordered w-full" value={form.registrationFee} onChange={handleChange} min="0" step="0.01" disabled={!isDraft} required />
                             </div>
                         </div>
 
                         <div className="form-control">
-                            <label className="label"><span className="label-text">Tags (comma-separated)</span></label>
-                            <input type="text" name="tags" className="input input-bordered w-full" value={form.tags} onChange={handleChange} disabled={!isDraft} />
+                            <label className="label"><span className="label-text">Tags (comma-separated) *</span></label>
+                            <input type="text" name="tags" className="input input-bordered w-full" value={form.tags} onChange={handleChange} disabled={!isDraft} required />
                         </div>
 
-                        <div className="flex gap-3 pt-2">
+                        {form.type === "MERCH" && (
+                            <div className="border border-base-300 rounded-box p-4 bg-base-200/50 mt-4">
+                                <h3 className="font-semibold text-lg mb-2">Merchandise Items *</h3>
+                                {merchItems.length === 0 && (
+                                    <p className="text-sm text-base-content/60 mb-2">Please add at least one item.</p>
+                                )}
+                                <div className="space-y-3">
+                                    {merchItems.map((item, idx) => (
+                                        <div key={idx} className="flex gap-2 items-end bg-base-100 p-3 rounded shadow-sm border border-base-200">
+                                            <div className="form-control flex-1">
+                                                <label className="label py-1"><span className="label-text text-xs">Item Name/Variant *</span></label>
+                                                <input
+                                                    type="text"
+                                                    className="input input-bordered input-sm w-full"
+                                                    value={item.name}
+                                                    onChange={(e) => {
+                                                        const copy = [...merchItems];
+                                                        copy[idx].name = e.target.value;
+                                                        setMerchItems(copy);
+                                                    }}
+                                                    placeholder="T-Shirt L"
+                                                    disabled={!isDraft}
+                                                    required
+                                                />
+                                            </div>
+                                            <div className="form-control w-24">
+                                                <label className="label py-1"><span className="label-text text-xs">Price *</span></label>
+                                                <input
+                                                    type="number"
+                                                    className="input input-bordered input-sm w-full"
+                                                    value={item.price}
+                                                    onChange={(e) => {
+                                                        const copy = [...merchItems];
+                                                        copy[idx].price = e.target.value;
+                                                        setMerchItems(copy);
+                                                    }}
+                                                    min="0"
+                                                    step="0.01"
+                                                    disabled={!isDraft}
+                                                    required
+                                                />
+                                            </div>
+                                            <div className="form-control w-24">
+                                                <label className="label py-1"><span className="label-text text-xs">Stock *</span></label>
+                                                <input
+                                                    type="number"
+                                                    className="input input-bordered input-sm w-full"
+                                                    value={item.stock}
+                                                    onChange={(e) => {
+                                                        const copy = [...merchItems];
+                                                        copy[idx].stock = e.target.value;
+                                                        setMerchItems(copy);
+                                                    }}
+                                                    min="1"
+                                                    disabled={!isDraft}
+                                                    required
+                                                />
+                                            </div>
+                                            <div className="form-control w-24">
+                                                <label className="label py-1"><span className="label-text text-xs">Limit/User *</span></label>
+                                                <input
+                                                    type="number"
+                                                    className="input input-bordered input-sm w-full"
+                                                    value={item.perUserLimit}
+                                                    onChange={(e) => {
+                                                        const copy = [...merchItems];
+                                                        copy[idx].perUserLimit = e.target.value;
+                                                        setMerchItems(copy);
+                                                    }}
+                                                    min="1"
+                                                    disabled={!isDraft}
+                                                    required
+                                                />
+                                            </div>
+                                            {isDraft && (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-error btn-sm btn-square"
+                                                    onClick={() => setMerchItems(merchItems.filter((_, i) => i !== idx))}
+                                                    title="Remove Item"
+                                                >
+                                                    x
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                {isDraft && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline mt-3"
+                                        onClick={() => setMerchItems([...merchItems, { name: "", price: "", stock: "", perUserLimit: "" }])}
+                                    >
+                                        + Add Item
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="flex gap-3 pt-2 mt-4 items-center">
                             <button className="btn btn-outline" disabled={saving} onClick={handleSave}>
                                 {saving ? "Saving..." : "Save Changes"}
                             </button>
@@ -204,6 +377,17 @@ export default function EditEvent() {
                                 <button className="btn btn-primary" disabled={saving} onClick={handlePublish}>
                                     {saving ? "Publishing..." : "Save and Publish"}
                                 </button>
+                            )}
+                            {form.type === "NORMAL" && (
+                                <div className="ml-auto">
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={() => navigate(`/organizer/events/${eventId}/form-builder`)}
+                                    >
+                                        Registration Form Builder
+                                    </button>
+                                </div>
                             )}
                         </div>
                     </div>

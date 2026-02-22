@@ -27,19 +27,29 @@ export default function Forum() {
             }
         })();
 
-        // Try Socket.IO if available
+        let isMounted = true;
         let socket;
         (async () => {
             try {
                 const { io } = await import("socket.io-client");
                 const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
                 socket = io(apiUrl, { transports: ["websocket", "polling"] });
+
+                if (!isMounted) {
+                    socket.disconnect();
+                    return;
+                }
+
                 socketRef.current = socket;
 
                 socket.emit("forum:join", eventId);
 
                 socket.on("forum:message", (msg) => {
-                    setMessages((prev) => [...prev, msg]);
+                    setMessages((prev) => {
+                        // Avoid duplicates
+                        if (prev.some((m) => (m._id || m.id) === (msg._id || msg.id))) return prev;
+                        return [...prev, msg];
+                    });
                 });
 
                 socket.on("forum:delete", ({ messageId }) => {
@@ -52,7 +62,13 @@ export default function Forum() {
         })();
 
         return () => {
-            if (socket) {
+            isMounted = false;
+            if (socketRef.current) {
+                socketRef.current.emit("forum:leave", eventId);
+                socketRef.current.disconnect();
+                socketRef.current = null;
+            } else if (socket) {
+                // If socket was created but ref wasn't assigned yet
                 socket.emit("forum:leave", eventId);
                 socket.disconnect();
             }

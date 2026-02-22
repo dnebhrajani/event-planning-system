@@ -18,7 +18,6 @@ export default function AdminDashboard() {
         category: "",
         subCategory: "",
         description: "",
-        contactEmail: "",
     });
     const [createLoading, setCreateLoading] = useState(false);
     const [createdOrg, setCreatedOrg] = useState(null); // holds the just-created organizer (with password)
@@ -74,7 +73,7 @@ export default function AdminDashboard() {
         try {
             const { data } = await api.post("/api/admin/organizers", newOrg);
             setCreatedOrg(data);
-            setNewOrg({ name: "", category: "", subCategory: "", description: "", contactEmail: "" });
+            setNewOrg({ name: "", category: "", subCategory: "", description: "" });
             fetchOrganizers();
         } catch (err) {
             setError(err.response?.data?.error || "Failed to create organizer");
@@ -138,7 +137,8 @@ export default function AdminDashboard() {
                         {createdOrg && (
                             <div className="alert alert-success shadow-lg">
                                 <div className="space-y-1">
-                                    <p className="font-bold">Organizer created! Copy these credentials, the password will not be shown again.</p>
+                                    <p className="font-bold">Organizer created! Copy these credentials, they will not be shown again.</p>
+                                    <p><strong>Organizer ID:</strong> {createdOrg.customOrganizerId}</p>
                                     <p><strong>Email:</strong> {createdOrg.email}</p>
                                     <p><strong>Password:</strong> <code className="bg-base-300 px-2 py-0.5 rounded">{createdOrg.generatedPassword}</code></p>
                                 </div>
@@ -192,20 +192,12 @@ export default function AdminDashboard() {
                                             />
                                         </div>
                                         <div className="form-control">
-                                            <label className="label"><span className="label-text">Description</span></label>
+                                            <label className="label"><span className="label-text">Description *</span></label>
                                             <textarea
                                                 className="textarea textarea-bordered w-full"
                                                 value={newOrg.description}
                                                 onChange={(e) => setNewOrg({ ...newOrg, description: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="form-control">
-                                            <label className="label"><span className="label-text">Contact Email</span></label>
-                                            <input
-                                                type="email"
-                                                className="input input-bordered w-full"
-                                                value={newOrg.contactEmail}
-                                                onChange={(e) => setNewOrg({ ...newOrg, contactEmail: e.target.value })}
+                                                required
                                             />
                                         </div>
                                         <button

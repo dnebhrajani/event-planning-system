@@ -130,7 +130,7 @@ export default function Signup() {
                             {form.participantType === "IIIT" && (
                                 <label className="label">
                                     <span className="label-text-alt text-warning">
-                                        Must use an email ending in .iiit.ac.in
+                                        Must use an email ending in @iiit.ac.in or .iiit.ac.in
                                     </span>
                                 </label>
                             )}

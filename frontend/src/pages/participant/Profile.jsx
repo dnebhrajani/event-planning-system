@@ -10,6 +10,7 @@ export default function Profile() {
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState("");
     const [form, setForm] = useState({});
+    const [allOrganizers, setAllOrganizers] = useState([]);
 
     useEffect(() => {
         (async () => {
@@ -23,6 +24,10 @@ export default function Profile() {
                     collegeOrOrg: data.collegeOrOrg || "",
                     areasOfInterest: data.areasOfInterest || [],
                 });
+
+                // Fetch all organizers for discovery
+                const { data: orgs } = await api.get("/api/participant/organizers");
+                setAllOrganizers(orgs);
             } catch (err) {
                 setMsg(err.response?.data?.error || "Failed to load profile");
             } finally {
@@ -53,6 +58,22 @@ export default function Profile() {
             setMsg(err.response?.data?.error || "Update failed");
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleFollow = async (orgId) => {
+        try {
+            await api.post(`/api/participant/follow/${orgId}`);
+            // Optimistically update
+            const org = allOrganizers.find(o => o._id === orgId);
+            if (org) {
+                setProfile(prev => ({
+                    ...prev,
+                    followedDetails: [...(prev.followedDetails || []), org]
+                }));
+            }
+        } catch (err) {
+            console.error("Failed to follow", err);
         }
     };
 
@@ -161,6 +182,34 @@ export default function Profile() {
                         </div>
                     </div>
                 )}
+
+                {/* Discover Organizers */}
+                <div className="card bg-base-100 shadow">
+                    <div className="card-body">
+                        <h2 className="card-title text-lg">Discover Organizers</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-1">
+                            {allOrganizers
+                                .filter(org => !profile?.followedDetails?.find(f => f._id === org._id))
+                                .map(org => (
+                                    <div key={org._id} className="flex justify-between items-center bg-base-200 p-3 rounded-box">
+                                        <div className="truncate pr-2">
+                                            <div className="font-semibold text-sm truncate">{org.name}</div>
+                                            <div className="text-xs text-base-content/60">{org.category}</div>
+                                        </div>
+                                        <button
+                                            className="btn btn-sm btn-outline"
+                                            onClick={() => handleFollow(org._id)}
+                                        >
+                                            Follow
+                                        </button>
+                                    </div>
+                                ))}
+                            {allOrganizers.length === 0 && (
+                                <p className="text-sm text-base-content/50">No new organizers to discover.</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );

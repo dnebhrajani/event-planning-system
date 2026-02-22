@@ -54,6 +54,17 @@ export default function EventDetails() {
 
     const handleFileUpload = async (label, file) => {
         if (!file) return;
+
+        // Check 3-file limit for NORMAL events
+        if (event?.type !== "MERCH") {
+            const fileFields = formFields.filter(f => f.type === "file").map(f => f.label);
+            const uploadedCount = fileFields.filter(f => formAnswers[f]).length;
+            if (!formAnswers[label] && uploadedCount >= 3) {
+                setError("Maximum of 3 file uploads allowed per registration.");
+                return;
+            }
+        }
+
         setFileUploading((prev) => ({ ...prev, [label]: true }));
         try {
             const reader = new FileReader();
@@ -386,6 +397,7 @@ export default function EventDetails() {
                                                             <div>
                                                                 <input
                                                                     type="file"
+                                                                    accept="image/*,application/pdf"
                                                                     className="file-input file-input-bordered file-input-sm w-full"
                                                                     onChange={(e) => handleFileUpload(field.label, e.target.files[0])}
                                                                 />

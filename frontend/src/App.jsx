@@ -16,6 +16,7 @@ import BrowseEvents from "./pages/participant/BrowseEvents.jsx";
 import EventDetails from "./pages/participant/EventDetails.jsx";
 import MyEvents from "./pages/participant/MyEvents.jsx";
 import Profile from "./pages/participant/Profile.jsx";
+import Onboarding from "./pages/participant/Onboarding.jsx";
 import Organizers from "./pages/participant/Organizers.jsx";
 import OrganizerDetail from "./pages/participant/OrganizerDetail.jsx";
 import MerchOrders from "./pages/participant/MerchOrders.jsx";
@@ -127,6 +128,14 @@ export default function App() {
                 element={
                     <ProtectedRoute allowedRoles={["participant"]}>
                         <Profile />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/participant/onboarding"
+                element={
+                    <ProtectedRoute allowedRoles={["participant"]}>
+                        <Onboarding />
                     </ProtectedRoute>
                 }
             />

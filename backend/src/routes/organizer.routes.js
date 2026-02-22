@@ -68,6 +68,7 @@ router.post("/events", async (req, res, next) => {
             registrationLimit,
             registrationFee,
             tags,
+            merchItems,
         } = req.body;
 
         const error = validateEventInput(req.body);
@@ -93,6 +94,7 @@ router.post("/events", async (req, res, next) => {
             organizerId: orgProfile._id,
             organizerName: orgProfile.name,
             tags: Array.isArray(tags) ? tags : [],
+            ...(type === "MERCH" && Array.isArray(merchItems) && { merchItems }),
             statusOverride: null,
             publishedAt: null,
             createdAt: now,
@@ -136,6 +138,7 @@ router.patch("/events/:eventId", async (req, res, next) => {
                 "name", "description", "type", "eligibility",
                 "registrationDeadline", "startDate", "endDate",
                 "registrationLimit", "registrationFee", "tags",
+                "merchItems"
             ];
             for (const key of allowed) {
                 if (req.body[key] !== undefined) {
@@ -420,6 +423,24 @@ router.get("/events/:eventId/participants", async (req, res, next) => {
             attendanceSet = new Set(attended.map((a) => a.participantId.toString()));
         }
 
+        // Look up custom form responses
+        let formResponsesMap = new Map();
+        if (collections.form_responses) {
+            const responses = await collections.form_responses
+                .find({ eventId: event._id })
+                .toArray();
+            formResponsesMap = new Map(responses.map((r) => [r.participantId.toString(), r.answers]));
+        }
+
+        // Look up merch order payment proofs
+        let merchProofsMap = new Map();
+        if (collections.merch_orders) {
+            const orders = await collections.merch_orders
+                .find({ eventId: event._id })
+                .toArray();
+            merchProofsMap = new Map(orders.map((o) => [o.participantId.toString(), o.paymentProofUrl]));
+        }
+
         let result = registrations.map((reg) => {
             const profile = profileMap.get(reg.participantId.toString()) || {};
             const user = userMap.get(reg.participantId.toString()) || {};
@@ -435,6 +456,8 @@ router.get("/events/:eventId/participants", async (req, res, next) => {
                 collegeOrOrg: profile.collegeOrOrg || "",
                 registeredAt: reg.createdAt,
                 attended: attendanceSet.has(reg.participantId.toString()),
+                formAnswers: formResponsesMap.get(reg.participantId.toString()) || null,
+                paymentProofUrl: merchProofsMap.get(reg.participantId.toString()) || null,
             };
         });
 

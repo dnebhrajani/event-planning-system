@@ -27,13 +27,13 @@ function createTransporter() {
  * Send an email.
  * @param {{ to: string, subject: string, text: string, html?: string }} opts
  */
-export async function sendMail({ to, subject, text, html }) {
+export async function sendMail({ to, subject, text, html, attachments }) {
     const from = process.env.SMTP_FROM || process.env.SMTP_USER;
     if (!from) {
         throw new Error("SMTP_FROM (or SMTP_USER) must be set in .env");
     }
 
     const transporter = createTransporter();
-    const info = await transporter.sendMail({ from, to, subject, text, html });
+    const info = await transporter.sendMail({ from, to, subject, text, html, attachments });
     return info;
 }

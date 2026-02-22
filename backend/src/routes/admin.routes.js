@@ -49,7 +49,7 @@ router.get("/organizers", async (_req, res, next) => {
 // Create a new organizer with a deterministic login email.
 router.post("/organizers", async (req, res, next) => {
     try {
-        const { name, category, subCategory, description, contactEmail } = req.body;
+        const { name, category, subCategory, description } = req.body;
 
         const error = validateOrganizerInput(req.body);
         if (error) return res.status(400).json({ error });
@@ -71,6 +71,9 @@ router.post("/organizers", async (req, res, next) => {
         // Generate random password (at least 10 chars)
         const generatedPassword = crypto.randomBytes(8).toString("hex"); // 16 hex chars
 
+        // Generate custom Organizer ID
+        const customOrganizerId = `ORG-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+
         const now = new Date();
         const passwordHash = await bcrypt.hash(generatedPassword, SALT_ROUNDS);
 
@@ -87,11 +90,11 @@ router.post("/organizers", async (req, res, next) => {
         // Create organizer profile
         const orgResult = await collections.organizers.insertOne({
             userId: userResult.insertedId,
+            customOrganizerId,
             name,
             category,
+            description,
             ...(subCategory && { subCategory }),
-            ...(description && { description }),
-            ...(contactEmail && { contactEmail }),
             createdAt: now,
             updatedAt: now,
         });
@@ -99,11 +102,11 @@ router.post("/organizers", async (req, res, next) => {
         res.status(201).json({
             _id: orgResult.insertedId,
             userId: userResult.insertedId,
+            customOrganizerId,
             name,
             category,
             subCategory: subCategory || null,
-            description: description || null,
-            contactEmail: contactEmail || null,
+            description,
             email: organizerEmail,
             generatedPassword, // shown exactly once
         });

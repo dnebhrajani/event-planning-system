@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { collections } from "../config/db.js";
 import { authRequired, requireRole } from "../middleware/auth.js";
 import { sendMail } from "../utils/email.js";
+import QRCode from "qrcode";
 
 const router = Router();
 
@@ -283,10 +284,16 @@ router.post("/events/:eventId/register", async (req, res, next) => {
 
         if (formSchema && formSchema.fields.length > 0) {
             const answers = req.body.formAnswers || {};
+            let fileUploadCount = 0;
             // Validate required fields
             for (const field of formSchema.fields) {
+                const val = answers[field.label];
+
+                if (field.type === "file" && val) {
+                    fileUploadCount++;
+                }
+
                 if (field.required) {
-                    const val = answers[field.label];
                     if (val === undefined || val === null || val === "") {
                         return res.status(400).json({
                             error: `Required field "${field.label}" is missing`,
@@ -294,14 +301,21 @@ router.post("/events/:eventId/register", async (req, res, next) => {
                     }
                 }
                 // Validate select field values
-                if (field.type === "select" && answers[field.label]) {
-                    if (!field.options.includes(answers[field.label])) {
+                if (field.type === "select" && val) {
+                    if (!field.options.includes(val)) {
                         return res.status(400).json({
                             error: `Invalid option for "${field.label}"`,
                         });
                     }
                 }
             }
+
+            if (fileUploadCount > 3) {
+                return res.status(400).json({
+                    error: "Maximum of 3 file uploads allowed per registration.",
+                });
+            }
+
             formAnswers = answers;
         }
 
@@ -364,6 +378,13 @@ router.post("/events/:eventId/register", async (req, res, next) => {
         // Try to send email (don't crash on failure)
         let emailSent = false;
         try {
+            const qrBuffer = await QRCode.toBuffer(qrPayload, {
+                errorCorrectionLevel: 'M',
+                type: 'png',
+                margin: 2,
+                width: 200
+            });
+
             await sendMail({
                 to: ticket.participantEmail,
                 subject: `Ticket Confirmation — ${event.name}`,
@@ -380,6 +401,33 @@ router.post("/events/:eventId/register", async (req, res, next) => {
                     ``,
                     `— Event Management Platform`,
                 ].join("\n"),
+                html: `
+                    <div style="font-family: sans-serif; color: #333;">
+                        <p>Hi ${profile.firstName},</p>
+                        <p>You have successfully registered for "<strong>${event.name}</strong>".</p>
+                        
+                        <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #eee;">
+                            <p style="margin: 0 0 10px 0;"><strong>Ticket ID:</strong> ${ticketId}</p>
+                            <p style="margin: 0 0 10px 0;"><strong>Event:</strong> ${event.name}</p>
+                            <p style="margin: 0;"><strong>Date:</strong> ${event.startDate ? new Date(event.startDate).toDateString() : "TBA"}</p>
+                        </div>
+                        
+                        <p>Present this Ticket ID or the QR code below at the venue.</p>
+                        
+                        <div style="margin: 20px 0;">
+                            <img src="cid:qrcode" alt="Ticket QR Code" style="width: 200px; height: 200px; border: 1px solid #ddd; border-radius: 8px;" />
+                        </div>
+                        
+                        <p style="color: #666; font-size: 0.9em;">— Event Management Platform</p>
+                    </div>
+                `,
+                attachments: [
+                    {
+                        filename: 'qrcode.png',
+                        content: qrBuffer,
+                        cid: 'qrcode'
+                    }
+                ]
             });
             emailSent = true;
         } catch (_emailErr) {
@@ -541,7 +589,7 @@ router.get("/profile", async (req, res, next) => {
 // ─── PATCH /api/participant/profile ─────────────────────────────────────────
 router.patch("/profile", async (req, res, next) => {
     try {
-        const allowed = ["firstName", "lastName", "contact", "collegeOrOrg", "areasOfInterest"];
+        const allowed = ["firstName", "lastName", "contact", "collegeOrOrg", "areasOfInterest", "onboarded"];
         const updates = {};
         for (const key of allowed) {
             if (req.body[key] !== undefined) updates[key] = req.body[key];

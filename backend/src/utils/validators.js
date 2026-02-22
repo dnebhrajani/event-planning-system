@@ -11,7 +11,7 @@ export function normalizeEmail(email) {
  */
 export function isValidIIITEmail(email) {
     const normalized = normalizeEmail(email);
-    return /\.iiit\.ac\.in$/.test(normalized);
+    return normalized.endsWith("@iiit.ac.in") || normalized.endsWith(".iiit.ac.in");
 }
 
 /**
@@ -34,7 +34,7 @@ export function validateRegisterInput({
         return "participantType must be either IIIT or NON_IIIT";
     }
     if (participantType === "IIIT" && !isValidIIITEmail(email)) {
-        return "IIIT participants must use an email ending in .iiit.ac.in";
+        return "IIIT participants must use an email ending in iiit.ac.in";
     }
     if (password.length < 6) {
         return "Password must be at least 6 characters";
@@ -58,9 +58,9 @@ export function validateLoginInput({ email, password }) {
 /**
  * Validate admin organizer creation fields.
  */
-export function validateOrganizerInput({ name, category }) {
-    if (!name || !category) {
-        return "name and category are required";
+export function validateOrganizerInput({ name, category, description }) {
+    if (!name || !category || !description) {
+        return "name, category, and description are required";
     }
     return null;
 }
@@ -77,6 +77,17 @@ export function validateEventInput(data, forPublish = false) {
         return "Event type must be NORMAL or MERCH";
     if (data.eligibility && !["IIIT", "NON_IIIT", "ALL"].includes(data.eligibility))
         return "Eligibility must be IIIT, NON_IIIT, or ALL";
+
+    if (data.type === "MERCH") {
+        if (!data.merchItems || !Array.isArray(data.merchItems) || data.merchItems.length === 0) {
+            return "Merchandise events must have at least one merch item";
+        }
+        for (const item of data.merchItems) {
+            if (!item.name || item.price === undefined || item.stock === undefined || item.perUserLimit === undefined) {
+                return "Each merch item must have a name, price, stock, and perUserLimit";
+            }
+        }
+    }
 
     if (forPublish) {
         if (!data.startDate) return "startDate is required to publish";

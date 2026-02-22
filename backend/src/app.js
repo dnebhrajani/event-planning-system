@@ -15,7 +15,7 @@ const app = express();
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173" }));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
 
 // ─── Health check ───────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
