@@ -228,12 +228,33 @@ router.get("/events/:eventId", async (req, res, next) => {
             !isDeadlinePassed &&
             (event.registrationLimit ? registrationCount < event.registrationLimit : true);
 
+        // Determine if forum should be accessible (approved registration)
+        let approvedRegistration = false;
+        if (existingReg) {
+            const needsApproval = event.type === "MERCH" || (event.registrationFee && event.registrationFee > 0);
+            if (needsApproval) {
+                approvedRegistration = existingReg.status === "confirmed";
+                // Also check MERCH orders
+                if (event.type === "MERCH" && !approvedRegistration) {
+                    const approvedOrder = await collections.merch_orders.findOne({
+                        eventId: event._id,
+                        participantId: new ObjectId(req.user.userId),
+                        status: "APPROVED",
+                    });
+                    approvedRegistration = !!approvedOrder;
+                }
+            } else {
+                approvedRegistration = true; // Free events: registered = approved
+            }
+        }
+
         res.json({
             ...event,
             status,
             registrationCount,
             eligible,
             alreadyRegistered: !!existingReg,
+            approvedRegistration,
             registrationOpen,
             isDeadlinePassed,
         });

@@ -15,18 +15,34 @@ async function hasForumAccess(userId, role, eventId) {
         return !!event;
     }
     if (role === "participant") {
-        const reg = await collections.registrations.findOne({
-            eventId,
-            participantId: new ObjectId(userId),
-        });
-        if (reg) return true;
-        // Also check merch orders
-        const order = await collections.merch_orders.findOne({
-            eventId,
-            participantId: new ObjectId(userId),
-            status: "APPROVED",
-        });
-        return !!order;
+        const event = await collections.events.findOne({ _id: eventId });
+        if (!event) return false;
+
+        const needsApproval = event.type === "MERCH" || (event.registrationFee && event.registrationFee > 0);
+
+        if (needsApproval) {
+            // For paid/merch events, check approved registration or approved merch order
+            const confirmedReg = await collections.registrations.findOne({
+                eventId,
+                participantId: new ObjectId(userId),
+                status: "confirmed",
+            });
+            if (confirmedReg) return true;
+            const approvedOrder = await collections.merch_orders.findOne({
+                eventId,
+                participantId: new ObjectId(userId),
+                status: "APPROVED",
+            });
+            return !!approvedOrder;
+        } else {
+            // For free events, any non-cancelled registration is enough
+            const reg = await collections.registrations.findOne({
+                eventId,
+                participantId: new ObjectId(userId),
+                status: { $nin: ["cancelled", "rejected"] },
+            });
+            return !!reg;
+        }
     }
     return false;
 }
@@ -100,6 +116,7 @@ router.post(
                 parentId: parentId ? new ObjectId(parentId) : null,
                 pinned: false,
                 deleted: false,
+                reactions: {},
                 createdAt: now,
             };
 
@@ -109,6 +126,45 @@ router.post(
             const io = req.app.get("io");
             if (io) {
                 io.to(`forum:${req.params.eventId}`).emit("forum:message", message);
+            }
+
+            // If organizer posts, create notifications for all registered participants
+            if (role === "organizer") {
+                const event = await collections.events.findOne({ _id: eventId });
+                const preview = text.trim().slice(0, 100) + (text.trim().length > 100 ? "…" : "");
+
+                // Get all registered participants
+                const regs = await collections.registrations
+                    .find({ eventId, status: { $nin: ["cancelled", "rejected"] } })
+                    .toArray();
+                const participantIds = regs.map((r) => r.participantId);
+
+                // For MERCH events, also include approved order holders
+                if (event?.type === "MERCH") {
+                    const orders = await collections.merch_orders
+                        .find({ eventId, status: "APPROVED" })
+                        .toArray();
+                    for (const o of orders) {
+                        if (!participantIds.some((id) => id.toString() === o.participantId.toString())) {
+                            participantIds.push(o.participantId);
+                        }
+                    }
+                }
+
+                if (participantIds.length > 0) {
+                    const notifications = participantIds.map((pid) => ({
+                        userId: pid,
+                        type: "forum_announcement",
+                        eventId,
+                        eventName: event?.name || "Event",
+                        messageId: message._id,
+                        senderName,
+                        text: preview,
+                        read: false,
+                        createdAt: now,
+                    }));
+                    await collections.notifications.insertMany(notifications);
+                }
             }
 
             res.status(201).json(message);
@@ -161,6 +217,62 @@ router.post(
             }
 
             res.json({ message: newPinned ? "Message pinned" : "Message unpinned", pinned: newPinned });
+        } catch (err) {
+            next(err);
+        }
+    }
+);
+
+// POST /api/forum/messages/:messageId/react
+// Toggle a reaction for the current user
+router.post(
+    "/messages/:messageId/react",
+    authRequired,
+    async (req, res, next) => {
+        try {
+            const { emoji } = req.body;
+            const allowed = ["👍", "❤️", "😂", "🔥", "👏"];
+            if (!emoji || !allowed.includes(emoji))
+                return res.status(400).json({ error: "Invalid reaction emoji" });
+
+            const msgId = new ObjectId(req.params.messageId);
+            const msg = await collections.forum_messages.findOne({ _id: msgId, deleted: { $ne: true } });
+            if (!msg) return res.status(404).json({ error: "Message not found" });
+
+            // Check access
+            const hasAccess = await hasForumAccess(req.user.userId, req.user.role, msg.eventId);
+            if (!hasAccess) return res.status(403).json({ error: "Not authorized" });
+
+            const userId = req.user.userId;
+            const reactions = msg.reactions || {};
+            const emojiUsers = reactions[emoji] || [];
+
+            let action;
+            if (emojiUsers.includes(userId)) {
+                // Remove reaction
+                reactions[emoji] = emojiUsers.filter((id) => id !== userId);
+                if (reactions[emoji].length === 0) delete reactions[emoji];
+                action = "removed";
+            } else {
+                // Add reaction
+                reactions[emoji] = [...emojiUsers, userId];
+                action = "added";
+            }
+
+            await collections.forum_messages.updateOne(
+                { _id: msgId },
+                { $set: { reactions } }
+            );
+
+            const io = req.app.get("io");
+            if (io) {
+                io.to(`forum:${msg.eventId.toString()}`).emit("forum:react", {
+                    messageId: msgId.toString(),
+                    reactions,
+                });
+            }
+
+            res.json({ action, reactions });
         } catch (err) {
             next(err);
         }

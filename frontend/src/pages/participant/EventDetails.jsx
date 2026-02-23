@@ -19,7 +19,6 @@ export default function EventDetails() {
     const [regLoading, setRegLoading] = useState(false);
     const [error, setError] = useState("");
     const [registerResult, setRegisterResult] = useState(null);
-    const [calLinks, setCalLinks] = useState(null);
 
     // Form state
     const [formFields, setFormFields] = useState([]);
@@ -29,9 +28,8 @@ export default function EventDetails() {
     useEffect(() => {
         (async () => {
             try {
-                const [evRes, calRes, formRes] = await Promise.allSettled([
+                const [evRes, formRes] = await Promise.allSettled([
                     api.get(`/api/participant/events/${eventId}`),
-                    api.get(`/api/calendar/events/${eventId}/links`),
                     api.get(`/api/forms/events/${eventId}`),
                 ]);
                 if (evRes.status === "fulfilled") {
@@ -46,7 +44,6 @@ export default function EventDetails() {
                     setEvent(eventData);
                 }
                 else setError(evRes.reason?.response?.data?.error || "Failed to load event");
-                if (calRes.status === "fulfilled") setCalLinks(calRes.value.data);
                 if (formRes.status === "fulfilled" && formRes.value.data.fields?.length > 0) {
                     setFormFields(formRes.value.data.fields);
                 }
@@ -512,24 +509,15 @@ export default function EventDetails() {
                             ) : null}
                         </div>
 
-                        {/* Calendar links */}
-                        {calLinks && (
+
+                        {/* Forum link — only for registered & approved participants */}
+                        {(event.approvedRegistration || (event.alreadyRegistered && !event.registrationFee && event.type !== "MERCH")) && (
                             <div className="mt-4">
-                                <h3 className="font-semibold text-sm mb-1">Add to Calendar</h3>
-                                <div className="flex flex-wrap gap-2">
-                                    <a href={calLinks.googleUrl} target="_blank" rel="noreferrer" className="btn btn-xs btn-outline">Google Calendar</a>
-                                    <a href={calLinks.outlookUrl} target="_blank" rel="noreferrer" className="btn btn-xs btn-outline">Outlook</a>
-                                    <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${calLinks.icsUrl}`} className="btn btn-xs btn-outline">Download .ics</a>
-                                </div>
+                                <Link to={`/forum/${eventId}`} className="btn btn-sm btn-outline">
+                                    Discussion Forum
+                                </Link>
                             </div>
                         )}
-
-                        {/* Forum link */}
-                        <div className="mt-4">
-                            <Link to={`/forum/${eventId}`} className="btn btn-sm btn-outline">
-                                Discussion Forum
-                            </Link>
-                        </div>
                     </div>
                 </div>
             </div>

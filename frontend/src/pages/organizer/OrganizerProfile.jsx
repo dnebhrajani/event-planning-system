@@ -192,18 +192,20 @@ export default function OrganizerProfile() {
                                                 <th>Date</th>
                                                 <th>Reason</th>
                                                 <th>Status</th>
+                                                <th>Admin Comment</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {resetRequests.map(req => (
                                                 <tr key={req._id}>
                                                     <td>{new Date(req.createdAt).toLocaleDateString()}</td>
-                                                    <td className="max-w-[200px] truncate" title={req.reason}>{req.reason}</td>
+                                                    <td className="max-w-[200px] truncate" title={req.reason}>{req.reason || "—"}</td>
                                                     <td>
-                                                        <span className={`badge badge-sm ${req.status === 'APPROVED' ? 'badge-success' : req.status === 'REJECTED' ? 'badge-error' : 'badge-warning'}`}>
+                                                        <span className={`badge badge-sm ${req.status === 'approved' || req.status === 'APPROVED' ? 'badge-success' : req.status === 'rejected' || req.status === 'REJECTED' ? 'badge-error' : 'badge-warning'}`}>
                                                             {req.status}
                                                         </span>
                                                     </td>
+                                                    <td className="text-sm text-base-content/70">{req.adminComment || "—"}</td>
                                                 </tr>
                                             ))}
                                         </tbody>

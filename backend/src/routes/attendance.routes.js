@@ -143,31 +143,35 @@ router.get("/events/:eventId", async (req, res, next) => {
             .toArray();
         const attendedTicketIds = new Set(attendanceRecords.map((a) => a.ticketId));
 
-        // Normal registrations
-        const normalRegs = await collections.registrations
-            .find({ eventId: event._id })
-            .toArray();
-
-        // Merch tickets
-        const merchTickets = await collections.tickets
-            .find({ eventId: event._id })
-            .toArray();
-
-        // Combine all ticket holders
+        // Use the appropriate ticket source based on event type to avoid duplicates
         const allTickets = [];
-        for (const r of normalRegs) {
-            allTickets.push({
-                ticketId: r.ticketId,
-                participantId: r.participantId,
-                type: "NORMAL",
-            });
-        }
-        for (const t of merchTickets) {
-            allTickets.push({
-                ticketId: t.ticketId,
-                participantId: t.participantId,
-                type: "MERCH",
-            });
+
+        if (event.type === "MERCH") {
+            // For merch events, use merch tickets only
+            const merchTickets = await collections.tickets
+                .find({ eventId: event._id })
+                .toArray();
+            for (const t of merchTickets) {
+                allTickets.push({
+                    ticketId: t.ticketId,
+                    participantId: t.participantId,
+                    type: "MERCH",
+                });
+            }
+        } else {
+            // For normal events, use registrations
+            const normalRegs = await collections.registrations
+                .find({ eventId: event._id })
+                .toArray();
+            for (const r of normalRegs) {
+                if (r.ticketId) {
+                    allTickets.push({
+                        ticketId: r.ticketId,
+                        participantId: r.participantId,
+                        type: "NORMAL",
+                    });
+                }
+            }
         }
 
         // Enrich with names

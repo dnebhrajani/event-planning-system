@@ -6,17 +6,13 @@ import Navbar from "../../components/Navbar";
 export default function OrganizerDashboard() {
     const [overview, setOverview] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [resetStatus, setResetStatus] = useState(null);
+
 
     useEffect(() => {
         (async () => {
             try {
-                const [ovRes, rstRes] = await Promise.allSettled([
-                    api.get("/api/organizer/overview"),
-                    api.get("/api/password-reset/my-request"),
-                ]);
-                if (ovRes.status === "fulfilled") setOverview(ovRes.value.data);
-                if (rstRes.status === "fulfilled") setResetStatus(rstRes.value.data);
+                const { data } = await api.get("/api/organizer/overview");
+                setOverview(data);
             } catch (err) {
                 console.error(err);
             } finally {
@@ -25,14 +21,7 @@ export default function OrganizerDashboard() {
         })();
     }, []);
 
-    const requestPasswordReset = async () => {
-        try {
-            await api.post("/api/password-reset/request");
-            setResetStatus({ status: "pending" });
-        } catch (err) {
-            alert(err.response?.data?.error || "Failed to submit request");
-        }
-    };
+
 
     if (loading)
         return (
@@ -84,32 +73,6 @@ export default function OrganizerDashboard() {
                     </Link>
                 </div>
 
-                {/* Password Reset */}
-                <div className="card bg-base-100 shadow">
-                    <div className="card-body">
-                        <h2 className="card-title text-lg">Password Reset</h2>
-                        {resetStatus?.status === "pending" ? (
-                            <p className="text-warning text-sm">Your password reset request is pending admin approval.</p>
-                        ) : resetStatus?.status === "approved" ? (
-                            <div className="text-sm">
-                                <p className="text-success mb-1">Password was reset by admin.</p>
-                                {resetStatus.newPassword && (
-                                    <p>New password: <code className="bg-base-300 px-2 py-0.5 rounded">{resetStatus.newPassword}</code></p>
-                                )}
-                            </div>
-                        ) : resetStatus?.status === "rejected" ? (
-                            <div>
-                                <p className="text-error text-sm mb-2">Your last request was rejected.</p>
-                                <button className="btn btn-sm btn-outline" onClick={requestPasswordReset}>Request Again</button>
-                            </div>
-                        ) : (
-                            <div>
-                                <p className="text-sm text-base-content/60 mb-2">Request admin to reset your password.</p>
-                                <button className="btn btn-sm btn-outline" onClick={requestPasswordReset}>Request Password Reset</button>
-                            </div>
-                        )}
-                    </div>
-                </div>
             </div>
         </div>
     );

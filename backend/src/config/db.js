@@ -37,6 +37,8 @@ export async function connectDb() {
   collections.reset_requests = db.collection("reset_requests");
   // Phase 6 – Forum
   collections.forum_messages = db.collection("forum_messages");
+  // Phase 7 – Notifications
+  collections.notifications = db.collection("notifications");
 
   // Create unique indexes
   await collections.users.createIndex({ email: 1 }, { unique: true });
@@ -66,6 +68,7 @@ export async function connectDb() {
   );
   await collections.reset_requests.createIndex({ organizerUserId: 1 });
   await collections.forum_messages.createIndex({ eventId: 1, createdAt: 1 });
+  await collections.notifications.createIndex({ userId: 1, read: 1, createdAt: -1 });
 
   // Auto-seed Admin if database is completely empty
   const adminExists = await collections.users.findOne({ role: "admin" });

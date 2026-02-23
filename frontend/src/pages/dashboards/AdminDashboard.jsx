@@ -48,9 +48,9 @@ export default function AdminDashboard() {
         }
     };
 
-    const handleResetAction = async (requestId, action) => {
+    const handleResetAction = async (requestId, action, comment) => {
         try {
-            const { data } = await api.patch(`/api/password-reset/requests/${requestId}`, { action });
+            const { data } = await api.patch(`/api/password-reset/requests/${requestId}`, { action, comment: comment || "" });
             if (action === "approve" && data.newPassword) {
                 alert(`Password reset approved. New password: ${data.newPassword}`);
             }
@@ -267,49 +267,90 @@ export default function AdminDashboard() {
 
                 {/* Password Reset Requests Tab */}
                 {activeTab === 'resetRequests' && (
-                    <div className="space-y-3">
-                        <h2 className="text-lg font-semibold">Password Reset Requests</h2>
-                        {resetRequests.length === 0 ? (
-                            <p className="text-center text-base-content/60 py-10">No reset requests.</p>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="table table-zebra w-full">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Email</th>
-                                            <th>Role</th>
-                                            <th>Status</th>
-                                            <th>Requested</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {resetRequests.map((r) => (
-                                            <tr key={r._id}>
-                                                <td>{r.organizerName}</td>
-                                                <td className="text-sm">{r.email}</td>
-                                                <td><span className="badge badge-sm badge-outline">{r.role}</span></td>
-                                                <td>
-                                                    <span className={`badge badge-sm ${r.status === 'pending' ? 'badge-warning' :
-                                                        r.status === 'approved' ? 'badge-success' : 'badge-error'
-                                                        }`}>{r.status}</span>
-                                                </td>
-                                                <td className="text-sm">{new Date(r.createdAt).toLocaleString()}</td>
-                                                <td>
-                                                    {r.status === 'pending' && (
+                    <div className="space-y-6">
+                        {/* Pending Requests */}
+                        <div>
+                            <h2 className="text-lg font-semibold mb-2">Pending Requests</h2>
+                            {resetRequests.filter(r => r.status === 'pending').length === 0 ? (
+                                <p className="text-center text-base-content/60 py-6">No pending requests.</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="table table-zebra w-full">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Email</th>
+                                                <th>Role</th>
+                                                <th>Requested</th>
+                                                <th>Reason</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {resetRequests.filter(r => r.status === 'pending').map((r) => (
+                                                <tr key={r._id}>
+                                                    <td>{r.organizerName}</td>
+                                                    <td className="text-sm">{r.email}</td>
+                                                    <td><span className="badge badge-sm badge-outline">{r.role}</span></td>
+                                                    <td className="text-sm">{new Date(r.createdAt).toLocaleString()}</td>
+                                                    <td className="text-sm text-base-content/70">{r.reason || "—"}</td>
+                                                    <td>
                                                         <div className="flex gap-1">
                                                             <button className="btn btn-xs btn-success" onClick={() => handleResetAction(r._id, 'approve')}>Approve</button>
-                                                            <button className="btn btn-xs btn-error" onClick={() => handleResetAction(r._id, 'reject')}>Reject</button>
+                                                            <button className="btn btn-xs btn-error" onClick={() => {
+                                                                const comment = window.prompt("Rejection reason (optional):");
+                                                                if (comment !== null) handleResetAction(r._id, 'reject', comment);
+                                                            }}>Reject</button>
                                                         </div>
-                                                    )}
-                                                </td>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* History */}
+                        <div>
+                            <h2 className="text-lg font-semibold mb-2">Password Reset History</h2>
+                            {resetRequests.filter(r => r.status !== 'pending').length === 0 ? (
+                                <p className="text-center text-base-content/60 py-6">No history yet.</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="table table-zebra w-full">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Email</th>
+                                                <th>Role</th>
+                                                <th>Status</th>
+                                                <th>Requested</th>
+                                                <th>Resolved</th>
+                                                <th>Admin Comment</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
+                                        </thead>
+                                        <tbody>
+                                            {resetRequests.filter(r => r.status !== 'pending').map((r) => (
+                                                <tr key={r._id}>
+                                                    <td>{r.organizerName}</td>
+                                                    <td className="text-sm">{r.email}</td>
+                                                    <td><span className="badge badge-sm badge-outline">{r.role}</span></td>
+                                                    <td>
+                                                        <span className={`badge badge-sm ${r.status === 'approved' ? 'badge-success' : 'badge-error'}`}>
+                                                            {r.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="text-sm">{new Date(r.createdAt).toLocaleString()}</td>
+                                                    <td className="text-sm">{r.resolvedAt ? new Date(r.resolvedAt).toLocaleString() : "—"}</td>
+                                                    <td className="text-sm text-base-content/70">{r.adminComment || "—"}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>

@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
+
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || "";
 
 export default function Signup() {
     const navigate = useNavigate();
@@ -16,6 +18,42 @@ export default function Signup() {
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
     const [loading, setLoading] = useState(false);
+    const [captchaToken, setCaptchaToken] = useState("");
+    const captchaRef = useRef(null);
+
+    // Load reCAPTCHA script
+    useEffect(() => {
+        if (!RECAPTCHA_SITE_KEY) return;
+
+        const renderCaptcha = () => {
+            if (captchaRef.current && window.grecaptcha?.render) {
+                try {
+                    window.grecaptcha.render(captchaRef.current, {
+                        sitekey: RECAPTCHA_SITE_KEY,
+                        callback: (token) => setCaptchaToken(token),
+                        "expired-callback": () => setCaptchaToken(""),
+                    });
+                } catch (_) { /* already rendered */ }
+            }
+        };
+
+        // If grecaptcha is already loaded (e.g. navigated from Login), render immediately
+        if (window.grecaptcha?.render) {
+            renderCaptcha();
+            return;
+        }
+
+        // Otherwise load the script
+        if (!document.getElementById("recaptcha-script")) {
+            const script = document.createElement("script");
+            script.id = "recaptcha-script";
+            script.src = "https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit";
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+        }
+        window.onRecaptchaLoad = renderCaptcha;
+    }, []);
 
     const handleChange = (e) =>
         setForm({ ...form, [e.target.name]: e.target.value });
@@ -24,13 +62,23 @@ export default function Signup() {
         e.preventDefault();
         setError("");
         setSuccess("");
+
+        if (RECAPTCHA_SITE_KEY && !captchaToken) {
+            setError("Please complete the CAPTCHA verification.");
+            return;
+        }
+
         setLoading(true);
         try {
-            await api.post("/api/auth/register", form);
+            await api.post("/api/auth/register", { ...form, captchaToken });
             setSuccess("Registration successful! Redirecting to login…");
             setTimeout(() => navigate("/login"), 1500);
         } catch (err) {
             setError(err.response?.data?.error || "Registration failed");
+            if (window.grecaptcha) {
+                window.grecaptcha.reset();
+                setCaptchaToken("");
+            }
         } finally {
             setLoading(false);
         }
@@ -165,6 +213,12 @@ export default function Signup() {
                                 required
                             />
                         </div>
+
+                        {RECAPTCHA_SITE_KEY && (
+                            <div className="flex justify-center">
+                                <div ref={captchaRef}></div>
+                            </div>
+                        )}
 
                         <button
                             type="submit"

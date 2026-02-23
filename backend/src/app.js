@@ -9,7 +9,7 @@ import merchRoutes from "./routes/merch.routes.js";
 import attendanceRoutes from "./routes/attendance.routes.js";
 import passwordResetRoutes from "./routes/passwordReset.routes.js";
 import forumRoutes from "./routes/forum.routes.js";
-import calendarRoutes from "./routes/calendar.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 
 const app = express();
 
@@ -32,7 +32,7 @@ app.use("/api/merch", merchRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/password-reset", passwordResetRoutes);
 app.use("/api/forum", forumRoutes);
-app.use("/api/calendar", calendarRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // ─── Centralised error handler ──────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars

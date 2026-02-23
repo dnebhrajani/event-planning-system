@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import Navbar from "../../components/Navbar";
 
@@ -51,16 +51,6 @@ export default function ParticipantDashboard() {
                     Use the navigation above to browse events or view your registrations.
                 </p>
 
-                <div className="grid sm:grid-cols-2 gap-4">
-                    <Link to="/participant/browse" className="card bg-base-100 shadow hover:shadow-lg transition p-4">
-                        <h2 className="font-semibold text-lg">Browse Events</h2>
-                        <p className="text-sm text-base-content/60">Discover and register for events.</p>
-                    </Link>
-                    <Link to="/participant/my-events" className="card bg-base-100 shadow hover:shadow-lg transition p-4">
-                        <h2 className="font-semibold text-lg">My Events</h2>
-                        <p className="text-sm text-base-content/60">View your registrations and tickets.</p>
-                    </Link>
-                </div>
 
                 {/* Password Reset */}
                 <div className="card bg-base-100 shadow">

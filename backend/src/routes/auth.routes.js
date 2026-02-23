@@ -12,6 +12,23 @@ import {
 const router = Router();
 const SALT_ROUNDS = 10;
 
+// ─── CAPTCHA verification helper ────────────────────────────────────────────
+async function verifyCaptcha(token) {
+    const secret = process.env.RECAPTCHA_SECRET_KEY;
+    if (!secret) return true; // Skip if not configured
+    if (!token) return false;
+    try {
+        const res = await fetch(
+            `https://www.google.com/recaptcha/api/siteverify?secret=${encodeURIComponent(secret)}&response=${encodeURIComponent(token)}`,
+            { method: "POST" }
+        );
+        const data = await res.json();
+        return data.success === true;
+    } catch {
+        return false;
+    }
+}
+
 // ─── POST /api/auth/register ────────────────────────────────────────────────
 // Register a new participant account.
 router.post("/register", async (req, res, next) => {
@@ -29,6 +46,10 @@ router.post("/register", async (req, res, next) => {
         // Validate input
         const error = validateRegisterInput(req.body);
         if (error) return res.status(400).json({ error });
+
+        // CAPTCHA verification
+        const captchaOk = await verifyCaptcha(req.body.captchaToken);
+        if (!captchaOk) return res.status(400).json({ error: "CAPTCHA verification failed" });
 
         const normalizedEmail = normalizeEmail(email);
         const now = new Date();
@@ -81,6 +102,10 @@ router.post("/login", async (req, res, next) => {
 
         const error = validateLoginInput(req.body);
         if (error) return res.status(400).json({ error });
+
+        // CAPTCHA verification
+        const captchaOk = await verifyCaptcha(req.body.captchaToken);
+        if (!captchaOk) return res.status(400).json({ error: "CAPTCHA verification failed" });
 
         const normalizedEmail = normalizeEmail(email);
         const user = await collections.users.findOne({ email: normalizedEmail });
