@@ -3,14 +3,11 @@ import { useParams } from "react-router-dom";
 import api from "../../api/axios";
 import Navbar from "../../components/Navbar";
 
-export default function MerchOrdersManage() {
+export default function RegistrationApprovalsManage() {
     const { eventId } = useParams();
-    const [orders, setOrders] = useState([]);
+    const [registrations, setRegistrations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [event, setEvent] = useState(null);
-    const [merchForm, setMerchForm] = useState([]);
-    const [showItems, setShowItems] = useState(false);
-    const [saving, setSaving] = useState(false);
     const [processingId, setProcessingId] = useState(null);
     const [openingFile, setOpeningFile] = useState(null);
 
@@ -20,13 +17,15 @@ export default function MerchOrdersManage() {
 
     const fetchData = async () => {
         try {
-            const [evRes, ordRes] = await Promise.all([
+            const [evRes, regRes] = await Promise.all([
                 api.get(`/api/organizer/events/${eventId}`),
-                api.get(`/api/merch/events/${eventId}/orders`),
+                api.get(`/api/organizer/events/${eventId}/registrations`),
             ]);
             setEvent(evRes.data);
-            setOrders(ordRes.data);
-            setMerchForm(evRes.data.merchItems || []);
+
+            // Only list registrations that have a payment proof or are PENDING for clarity
+            const filteredRegs = regRes.data.filter(r => r.paymentProofUrl || r.status === "PENDING" || r.status === "rejected" || r.status === "registered");
+            setRegistrations(filteredRegs);
         } catch (err) {
             console.error(err);
         } finally {
@@ -34,12 +33,14 @@ export default function MerchOrdersManage() {
         }
     };
 
-    const handleAction = async (orderId, action) => {
-        setProcessingId(orderId);
+    const handleAction = async (regId, action) => {
+        setProcessingId(regId);
         try {
-            await api.post(`/api/merch/orders/${orderId}/${action}`, {});
-            // Refresh all data (orders + event with updated stock) after action
-            await fetchData();
+            await api.post(`/api/organizer/events/${eventId}/registrations/${regId}/${action}`, {});
+            const newStatus = action === "approve" ? "registered" : "rejected";
+            setRegistrations((prev) =>
+                prev.map((r) => (r._id === regId ? { ...r, status: newStatus } : r))
+            );
         } catch (err) {
             console.error(err);
         } finally {
@@ -48,8 +49,8 @@ export default function MerchOrdersManage() {
     };
 
     const statusBadge = (s) => {
-        if (s === "APPROVED") return "badge-success";
-        if (s === "REJECTED") return "badge-error";
+        if (s === "registered" || s === "APPROVED") return "badge-success";
+        if (s === "cancelled" || s === "REJECTED" || s === "rejected") return "badge-error";
         return "badge-warning";
     };
 
@@ -70,6 +71,7 @@ export default function MerchOrdersManage() {
             window.open(url, '_blank', 'noopener,noreferrer');
         }
     };
+
     if (loading)
         return (
             <div className="min-h-screen bg-base-200">
@@ -82,59 +84,35 @@ export default function MerchOrdersManage() {
         <div className="min-h-screen bg-base-200">
             <Navbar />
             <div className="max-w-5xl mx-auto p-6 space-y-4">
-                <h1 className="text-2xl font-bold">Merch Orders: {event?.name}</h1>
+                <h1 className="text-2xl font-bold">Registration Approvals: {event?.name}</h1>
 
-                {/* Live Stock Counter */}
-                {event?.merchItems?.length > 0 && (
-                    <div className="card bg-base-100 shadow-sm p-4">
-                        <h3 className="font-semibold text-sm mb-2">Stock Levels</h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                            {event.merchItems.map((item, idx) => (
-                                <div key={idx} className="flex items-center gap-2">
-                                    <span className="text-sm">{item.name}:</span>
-                                    <span className={`badge badge-sm ${(item.stockQty ?? item.stock) <= 0 ? 'badge-error' : 'badge-success'}`}>
-                                        {item.stockQty ?? item.stock ?? "∞"}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Orders Table */}
-                <h2 className="text-lg font-semibold">Orders ({orders.length})</h2>
+                <h2 className="text-lg font-semibold">Registrations ({registrations.length})</h2>
                 <div className="overflow-x-auto">
                     <table className="table table-zebra table-sm w-full">
                         <thead>
                             <tr>
-                                <th>Order ID</th>
-                                <th>Participant</th>
-                                <th>Items</th>
-                                <th>Total</th>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Expected Fee</th>
                                 <th>Payment Ref</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {orders.map((o) => (
-                                <tr key={o._id}>
-                                    <td><code className="text-xs">{o.orderId}</code></td>
-                                    <td>{o.participantName}</td>
-                                    <td>
-                                        {o.items.map((it, i) => (
-                                            <div key={i}>{it.name} x{it.quantity}{it.size ? ` (${it.size})` : ""}</div>
-                                        ))}
-                                    </td>
-                                    <td>₹{o.totalAmount || 0}</td>
+                            {registrations.map((r) => (
+                                <tr key={r._id}>
+                                    <td>{r.participantName}</td>
+                                    <td>{r.participantEmail}</td>
+                                    <td>₹{event?.registrationFee || 0}</td>
                                     <td className="text-xs">
-                                        {o.paymentProofUrl ? (
+                                        {r.paymentProofUrl ? (
                                             <button
-                                                onClick={() => handleViewFile(o.paymentProofUrl)}
-                                                disabled={openingFile === o.paymentProofUrl}
+                                                onClick={() => handleViewFile(r.paymentProofUrl)}
+                                                disabled={openingFile === r.paymentProofUrl}
                                                 className="text-primary link link-hover break-all flex items-center gap-1 text-left"
                                             >
-                                                {openingFile === o.paymentProofUrl ? (
+                                                {openingFile === r.paymentProofUrl ? (
                                                     <span className="loading loading-spinner loading-xs"></span>
                                                 ) : (
                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
@@ -145,31 +123,31 @@ export default function MerchOrdersManage() {
                                             <span className="text-base-content/50">-</span>
                                         )}
                                     </td>
-                                    <td><span className={`badge badge-sm ${statusBadge(o.status)}`}>{o.status}</span></td>
+                                    <td><span className={`badge badge-sm ${statusBadge(r.status)}`}>{r.status}</span></td>
                                     <td>
-                                        {o.status === "PENDING" && (
+                                        {r.status === "PENDING" && (
                                             <div className="flex gap-1">
                                                 <button
                                                     className="btn btn-xs btn-success"
-                                                    disabled={processingId === o._id}
-                                                    onClick={() => handleAction(o._id, "approve")}
+                                                    disabled={processingId === r._id}
+                                                    onClick={() => handleAction(r._id, "approve")}
                                                 >
-                                                    {processingId === o._id ? "..." : "Approve"}
+                                                    {processingId === r._id ? "..." : "Approve"}
                                                 </button>
                                                 <button
                                                     className="btn btn-xs btn-error"
-                                                    disabled={processingId === o._id}
-                                                    onClick={() => handleAction(o._id, "reject")}
+                                                    disabled={processingId === r._id}
+                                                    onClick={() => handleAction(r._id, "reject")}
                                                 >
-                                                    {processingId === o._id ? "..." : "Reject"}
+                                                    {processingId === r._id ? "..." : "Reject"}
                                                 </button>
                                             </div>
                                         )}
                                     </td>
                                 </tr>
                             ))}
-                            {orders.length === 0 && (
-                                <tr><td colSpan={7} className="text-center py-6 text-base-content/60">No orders yet</td></tr>
+                            {registrations.length === 0 && (
+                                <tr><td colSpan={6} className="text-center py-6 text-base-content/60">No registrations yet</td></tr>
                             )}
                         </tbody>
                     </table>

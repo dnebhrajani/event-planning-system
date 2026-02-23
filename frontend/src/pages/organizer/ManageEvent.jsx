@@ -138,8 +138,15 @@ export default function ManageEvent() {
                                     <Link to={`/organizer/events/${eventId}/edit`} className="btn btn-sm btn-outline">Edit</Link>
                                 )}
                                 <Link to={`/organizer/events/${eventId}/attendance`} className="btn btn-sm btn-outline">Attendance</Link>
-                                <Link to={`/organizer/events/${eventId}/form-builder`} className="btn btn-sm btn-outline">Form Builder</Link>
-                                <Link to={`/organizer/events/${eventId}/merch-orders`} className="btn btn-sm btn-outline">Merch Orders</Link>
+                                {event.type === "NORMAL" && (
+                                    <Link to={`/organizer/events/${eventId}/form-builder`} className="btn btn-sm btn-outline">Builder</Link>
+                                )}
+                                {event.type === "MERCH" && (
+                                    <Link to={`/organizer/events/${eventId}/merch-orders`} className="btn btn-sm btn-outline">Merch Orders</Link>
+                                )}
+                                {event.type !== "MERCH" && event.registrationFee > 0 && (
+                                    <Link to={`/organizer/events/${eventId}/registration-approvals`} className="btn btn-sm btn-outline">Payment Approvals</Link>
+                                )}
                                 <Link to={`/forum/${eventId}`} className="btn btn-sm btn-outline">Discussion Forum</Link>
                             </div>
                         </div>
@@ -168,7 +175,7 @@ export default function ManageEvent() {
                         </div>
 
                         {/* Merch Analytics */}
-                        {analytics.merchOrdersTotal !== undefined && (
+                        {event.type === "MERCH" && analytics.merchOrdersTotal !== undefined && (
                             <>
                                 <div className="stat bg-base-100 shadow rounded-box">
                                     <div className="stat-title">Merch Orders</div>

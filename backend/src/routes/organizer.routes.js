@@ -1,8 +1,11 @@
 import { Router } from "express";
 import { ObjectId } from "mongodb";
+import crypto from "crypto";
+import QRCode from "qrcode";
 import { collections } from "../config/db.js";
 import { authRequired, requireRole } from "../middleware/auth.js";
 import { validateEventInput } from "../utils/validators.js";
+import { sendMail } from "../utils/email.js";
 
 const router = Router();
 
@@ -10,6 +13,12 @@ const router = Router();
 router.use(authRequired, requireRole(["organizer"]));
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+function generateTicketId() {
+    const ts = Date.now().toString(36).toUpperCase();
+    const rand = crypto.randomBytes(2).toString("hex").toUpperCase();
+    return `FEL-${ts}-${rand}`;
+}
 
 /**
  * Compute event status from dates + optional override field.
@@ -73,6 +82,14 @@ router.post("/events", async (req, res, next) => {
 
         const error = validateEventInput(req.body);
         if (error) return res.status(400).json({ error });
+
+        // Check for duplicate event name (case-insensitive)
+        const existingEvent = await collections.events.findOne({
+            name: { $regex: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+        });
+        if (existingEvent) {
+            return res.status(409).json({ error: "This event already exists" });
+        }
 
         const now = new Date();
         const event = {
@@ -162,17 +179,33 @@ router.patch("/events/:eventId", async (req, res, next) => {
             for (const key of allowed) {
                 if (req.body[key] !== undefined) {
                     if (key === "registrationDeadline") {
-                        updates[key] = new Date(req.body[key]);
+                        const newDate = new Date(req.body[key]);
+                        if (event.registrationDeadline && newDate < event.registrationDeadline) {
+                            return res.status(400).json({ error: "Cannot shorten registration deadline for a Published event" });
+                        }
+                        updates[key] = newDate;
                     } else if (key === "registrationLimit") {
-                        updates[key] = parseInt(req.body[key], 10);
+                        const newLimit = parseInt(req.body[key], 10);
+                        if (event.registrationLimit && newLimit < event.registrationLimit) {
+                            return res.status(400).json({ error: "Cannot decrease registration limit for a Published event" });
+                        }
+                        updates[key] = newLimit;
+                    } else if (key === "statusOverride") {
+                        if (!["Closed", "Completed"].includes(req.body[key])) {
+                            return res.status(400).json({ error: "Status override can only be Closed or Completed" });
+                        }
+                        updates[key] = req.body[key];
                     } else {
                         updates[key] = req.body[key];
                     }
                 }
             }
-        } else if (status === "Ongoing" || status === "Completed") {
+        } else if (status === "Ongoing" || status === "Completed" || status === "Closed") {
             // Only status change
             if (req.body.statusOverride !== undefined) {
+                if (!["Closed", "Completed"].includes(req.body.statusOverride)) {
+                    return res.status(400).json({ error: "Status override can only be Closed or Completed" });
+                }
                 updates.statusOverride = req.body.statusOverride;
             } else {
                 return res
@@ -328,20 +361,27 @@ router.get("/overview", async (req, res, next) => {
         if (eventIds.length > 0) {
             totalRegistrations = await collections.registrations.countDocuments({
                 eventId: { $in: eventIds },
+                status: { $nin: ["cancelled", "rejected"] }
             });
         }
 
         const drafts = events.filter((e) => !e.publishedAt).length;
-        const published = events.filter((e) => {
+        const now = new Date();
+        const publishedEvents = events.filter((e) => {
             const s = computeStatus(e);
             return s === "Published" || s === "Ongoing";
+        }).length;
+        const upcomingEvents = events.filter((e) => {
+            const s = computeStatus(e);
+            return (s === "Published" || s === "Ongoing") && e.startDate && new Date(e.startDate) > now;
         }).length;
         const completed = events.filter((e) => computeStatus(e) === "Completed").length;
 
         res.json({
             totalEvents: events.length,
             drafts,
-            published,
+            publishedEvents,
+            upcomingEvents,
             completed,
             totalRegistrations,
             recentEvents: events.slice(0, 5).map((e) => ({ ...e, status: computeStatus(e) })),
@@ -369,6 +409,7 @@ router.get("/events/:eventId", async (req, res, next) => {
 
         const registrationCount = await collections.registrations.countDocuments({
             eventId: event._id,
+            status: { $nin: ["cancelled", "rejected"] }
         });
 
         res.json({
@@ -397,7 +438,7 @@ router.get("/events/:eventId/participants", async (req, res, next) => {
         if (!event) return res.status(404).json({ error: "Event not found" });
 
         const registrations = await collections.registrations
-            .find({ eventId: event._id })
+            .find({ eventId: event._id, status: { $nin: ["cancelled", "rejected"] } })
             .sort({ createdAt: -1 })
             .toArray();
 
@@ -494,7 +535,7 @@ router.get("/events/:eventId/export-participants.csv", async (req, res, next) =>
         if (!event) return res.status(404).json({ error: "Event not found" });
 
         const registrations = await collections.registrations
-            .find({ eventId: event._id })
+            .find({ eventId: event._id, status: { $nin: ["cancelled", "rejected"] } })
             .sort({ createdAt: -1 })
             .toArray();
 
@@ -551,6 +592,7 @@ router.get("/events/:eventId/analytics", async (req, res, next) => {
 
         const totalRegistrations = await collections.registrations.countDocuments({
             eventId: event._id,
+            status: { $nin: ["cancelled", "rejected"] }
         });
 
         let attendedCount = 0;
@@ -562,7 +604,7 @@ router.get("/events/:eventId/analytics", async (req, res, next) => {
 
         // Type breakdown
         const registrations = await collections.registrations
-            .find({ eventId: event._id })
+            .find({ eventId: event._id, status: { $nin: ["cancelled", "rejected"] } })
             .toArray();
         const participantIds = registrations.map((r) => r.participantId);
         let iiitCount = 0;
@@ -615,6 +657,198 @@ router.get("/events/:eventId/analytics", async (req, res, next) => {
             registrationLimit: event.registrationLimit || null,
             fillRate: event.registrationLimit ? Math.round((totalRegistrations / event.registrationLimit) * 100) : null,
         });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─── GET /api/organizer/events/:eventId/registrations ───────────────────────
+router.get("/events/:eventId/registrations", async (req, res, next) => {
+    try {
+        const orgProfile = await collections.organizers.findOne({
+            userId: new ObjectId(req.user.userId),
+        });
+        if (!orgProfile)
+            return res.status(404).json({ error: "Organizer profile not found" });
+
+        const event = await collections.events.findOne({
+            _id: new ObjectId(req.params.eventId),
+            organizerId: orgProfile._id,
+        });
+        if (!event) return res.status(404).json({ error: "Event not found" });
+
+        const registrations = await collections.registrations
+            .find({ eventId: event._id, status: { $nin: ["cancelled"] } })
+            .sort({ createdAt: -1 })
+            .toArray();
+
+        const participantIds = registrations.map((r) => r.participantId);
+
+        const profiles = await collections.participant_profiles
+            .find({ userId: { $in: participantIds } })
+            .toArray();
+        const profileMap = new Map(profiles.map((p) => [p.userId.toString(), p]));
+
+        const users = await collections.users
+            .find({ _id: { $in: participantIds } })
+            .toArray();
+        const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+        const result = registrations.map((reg) => {
+            const profile = profileMap.get(reg.participantId.toString()) || {};
+            const user = userMap.get(reg.participantId.toString()) || {};
+            return {
+                _id: reg._id,
+                participantName: `${profile.firstName || ""} ${profile.lastName || ""}`.trim(),
+                participantEmail: user.email || "",
+                paymentProofUrl: reg.paymentProofUrl || null,
+                status: reg.status,
+                createdAt: reg.createdAt,
+            };
+        });
+
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─── POST /api/organizer/events/:eventId/registrations/:regId/:action ───────
+router.post("/events/:eventId/registrations/:regId/:action", async (req, res, next) => {
+    try {
+        const { eventId, regId, action } = req.params;
+        if (!["approve", "reject"].includes(action)) {
+            return res.status(400).json({ error: "Invalid action" });
+        }
+
+        const orgProfile = await collections.organizers.findOne({
+            userId: new ObjectId(req.user.userId),
+        });
+        if (!orgProfile) return res.status(404).json({ error: "Organizer profile not found" });
+
+        const event = await collections.events.findOne({
+            _id: new ObjectId(eventId),
+            organizerId: orgProfile._id,
+        });
+        if (!event) return res.status(404).json({ error: "Event not found" });
+
+        const registration = await collections.registrations.findOne({
+            _id: new ObjectId(regId),
+            eventId: event._id,
+        });
+        if (!registration) return res.status(404).json({ error: "Registration not found" });
+
+        if (registration.status !== "PENDING") {
+            return res.status(400).json({ error: "Registration is not strictly PENDING." });
+        }
+
+        const now = new Date();
+
+        if (action === "reject") {
+            await collections.registrations.updateOne(
+                { _id: new ObjectId(regId) },
+                { $set: { status: "rejected", updatedAt: now } }
+            );
+            return res.json({ message: "Registration rejected" });
+        }
+
+        // Action is approve
+        const ticketId = generateTicketId();
+
+        await collections.registrations.updateOne(
+            { _id: new ObjectId(regId) },
+            { $set: { status: "registered", ticketId, updatedAt: now } }
+        );
+
+        const user = await collections.users.findOne({ _id: registration.participantId });
+        const profile = await collections.participant_profiles.findOne({ userId: registration.participantId });
+
+        const qrPayload = JSON.stringify({
+            ticketId,
+            eventId: event._id.toString(),
+            participantId: registration.participantId.toString(),
+        });
+
+        const ticket = {
+            ticketId,
+            registrationId: registration._id,
+            eventId: event._id,
+            participantId: registration.participantId,
+            eventName: event.name,
+            participantName: `${profile?.firstName || ""} ${profile?.lastName || ""}`,
+            participantEmail: user?.email,
+            qrPayload,
+            createdAt: now,
+        };
+        await collections.tickets.insertOne(ticket);
+
+        let emailSent = false;
+        try {
+            if (user?.email) {
+                const qrBuffer = await QRCode.toBuffer(qrPayload, {
+                    errorCorrectionLevel: 'M',
+                    type: 'png',
+                    margin: 2,
+                    width: 200
+                });
+
+                await sendMail({
+                    to: user.email,
+                    subject: `Ticket Confirmation — ${event.name}`,
+                    text: [
+                        `Hi ${profile?.firstName || ""},`,
+                        ``,
+                        `Your registration and payment for "${event.name}" have been approved.`,
+                        ``,
+                        `Ticket ID: ${ticketId}`,
+                        `Event: ${event.name}`,
+                        `Date: ${event.startDate ? new Date(event.startDate).toDateString() : "TBA"}`,
+                        ``,
+                        `Present this Ticket ID or QR code at the venue.`,
+                        ``,
+                        `— Event Management Platform`,
+                    ].join("\n"),
+                    html: `
+                        <div style="font-family: sans-serif; color: #333;">
+                            <p>Hi ${profile?.firstName || ""},</p>
+                            <p>Your registration and payment for "<strong>${event.name}</strong>" have been approved.</p>
+                            
+                            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #eee;">
+                                <p style="margin: 0 0 10px 0;"><strong>Ticket ID:</strong> ${ticketId}</p>
+                                <p style="margin: 0 0 10px 0;"><strong>Event:</strong> ${event.name}</p>
+                                <p style="margin: 0;"><strong>Date:</strong> ${event.startDate ? new Date(event.startDate).toDateString() : "TBA"}</p>
+                            </div>
+                            
+                            <p>Present this Ticket ID or the QR code below at the venue.</p>
+                            
+                            <div style="margin: 20px 0;">
+                                <img src="cid:qrcode" alt="Ticket QR Code" style="width: 200px; height: 200px; border: 1px solid #ddd; border-radius: 8px;" />
+                            </div>
+                            
+                            <p style="color: #666; font-size: 0.9em;">— Event Management Platform</p>
+                        </div>
+                    `,
+                    attachments: [
+                        {
+                            filename: 'qrcode.png',
+                            content: qrBuffer,
+                            cid: 'qrcode'
+                        }
+                    ]
+                });
+                emailSent = true;
+            }
+        } catch (_) {
+            // Drop errors gracefully
+        }
+
+        res.json({
+            message: "Registration approved",
+            ticketId,
+            qrPayload,
+            emailSent,
+        });
+
     } catch (err) {
         next(err);
     }

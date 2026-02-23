@@ -84,15 +84,13 @@ export default function OrganizerEvents() {
                                             <Link to={`/organizer/events/${e._id}/manage`} className="btn btn-xs btn-primary">
                                                 Manage
                                             </Link>
+                                            <Link to={`/organizer/events/${e._id}/edit`} className="btn btn-xs btn-outline">
+                                                Edit
+                                            </Link>
                                             {e.status === "Draft" && (
-                                                <>
-                                                    <Link to={`/organizer/events/${e._id}/edit`} className="btn btn-xs btn-outline">
-                                                        Edit
-                                                    </Link>
-                                                    <button className="btn btn-xs btn-secondary" onClick={() => handlePublish(e._id)}>
-                                                        Publish
-                                                    </button>
-                                                </>
+                                                <button className="btn btn-xs btn-secondary" onClick={() => handlePublish(e._id)}>
+                                                    Publish
+                                                </button>
                                             )}
                                         </td>
                                     </tr>

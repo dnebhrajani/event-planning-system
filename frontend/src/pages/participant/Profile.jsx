@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import Navbar from "../../components/Navbar";
 
 const INTEREST_OPTIONS = ["Technical", "Cultural", "Sports", "Academic", "Other"];
 
 export default function Profile() {
+    const navigate = useNavigate();
     const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -168,12 +170,12 @@ export default function Profile() {
                             <h2 className="card-title text-lg">Followed Clubs</h2>
                             <div className="space-y-2">
                                 {profile.followedDetails.map((org) => (
-                                    <div key={org._id} className="flex items-center justify-between border-b border-base-300 pb-2">
+                                    <div key={org._id} className="flex items-center justify-between border-b border-base-300 pb-2 cursor-pointer hover:bg-base-200 rounded-lg px-2 transition" onClick={() => navigate(`/participant/organizers/${org._id}`)}>
                                         <div>
                                             <span className="font-medium">{org.name}</span>
                                             <span className="badge badge-sm badge-ghost ml-2">{org.category}</span>
                                         </div>
-                                        <button className="btn btn-xs btn-outline" onClick={() => handleUnfollow(org._id)}>
+                                        <button className="btn btn-xs btn-outline" onClick={(e) => { e.stopPropagation(); handleUnfollow(org._id); }}>
                                             Unfollow
                                         </button>
                                     </div>
@@ -191,14 +193,14 @@ export default function Profile() {
                             {allOrganizers
                                 .filter(org => !profile?.followedDetails?.find(f => f._id === org._id))
                                 .map(org => (
-                                    <div key={org._id} className="flex justify-between items-center bg-base-200 p-3 rounded-box">
+                                    <div key={org._id} className="flex justify-between items-center bg-base-200 p-3 rounded-box cursor-pointer hover:bg-base-300 transition" onClick={() => navigate(`/participant/organizers/${org._id}`)}>
                                         <div className="truncate pr-2">
                                             <div className="font-semibold text-sm truncate">{org.name}</div>
                                             <div className="text-xs text-base-content/60">{org.category}</div>
                                         </div>
                                         <button
                                             className="btn btn-sm btn-outline"
-                                            onClick={() => handleFollow(org._id)}
+                                            onClick={(e) => { e.stopPropagation(); handleFollow(org._id); }}
                                         >
                                             Follow
                                         </button>

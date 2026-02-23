@@ -77,7 +77,7 @@ export default function CreateEvent() {
                     merchItems: merchItems.map((m) => ({
                         name: m.name,
                         price: Number(m.price),
-                        stock: Number(m.stock),
+                        stockQty: Number(m.stock),
                         perUserLimit: Number(m.perUserLimit)
                     }))
                 })
@@ -174,7 +174,7 @@ export default function CreateEvent() {
 
                         {form.type === "MERCH" && (
                             <div className="border border-base-300 rounded-box p-4 bg-base-200/50 mt-4">
-                                <h3 className="font-semibold text-lg mb-2">Merchandise Items *</h3>
+                                <h3 className="font-semibold text-lg mb-2">Merchandise Item * (Max 1)</h3>
                                 {merchItems.length === 0 && (
                                     <p className="text-sm text-base-content/60 mb-2">Please add at least one item.</p>
                                 )}
@@ -257,6 +257,7 @@ export default function CreateEvent() {
                                     type="button"
                                     className="btn btn-sm btn-outline mt-3"
                                     onClick={() => setMerchItems([...merchItems, { name: "", price: "", stock: "", perUserLimit: "" }])}
+                                    disabled={merchItems.length >= 1}
                                 >
                                     + Add Item
                                 </button>

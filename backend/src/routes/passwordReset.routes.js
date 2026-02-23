@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { collections } from "../config/db.js";
 import { authRequired, requireRole } from "../middleware/auth.js";
+import { sendMail } from "../utils/email.js";
 
 const router = Router();
 
@@ -11,7 +12,7 @@ const router = Router();
 router.post(
     "/request",
     authRequired,
-    requireRole(["organizer"]),
+    requireRole(["organizer", "participant"]),
     async (req, res, next) => {
         try {
             const existing = await collections.reset_requests.findOne({
@@ -21,7 +22,7 @@ router.post(
             if (existing)
                 return res.status(400).json({ error: "You already have a pending reset request" });
 
-            const { reason } = req.body;
+            const { reason } = req.body || {};
             const now = new Date();
             await collections.reset_requests.insertOne({
                 organizerUserId: new ObjectId(req.user.userId),
@@ -42,7 +43,7 @@ router.post(
 router.get(
     "/my-request",
     authRequired,
-    requireRole(["organizer"]),
+    requireRole(["organizer", "participant"]),
     async (req, res, next) => {
         try {
             const requests = await collections.reset_requests
@@ -73,14 +74,18 @@ router.get(
             const uMap = new Map(users.map((u) => [u._id.toString(), u]));
             const orgs = await collections.organizers.find({ userId: { $in: userIds } }).toArray();
             const oMap = new Map(orgs.map((o) => [o.userId.toString(), o]));
+            const parts = await collections.participant_profiles.find({ userId: { $in: userIds } }).toArray();
+            const pMap = new Map(parts.map((p) => [p.userId.toString(), p]));
 
             const result = requests.map((r) => {
                 const u = uMap.get(r.organizerUserId.toString()) || {};
-                const o = oMap.get(r.organizerUserId.toString()) || {};
+                const o = oMap.get(r.organizerUserId.toString());
+                const p = pMap.get(r.organizerUserId.toString());
                 return {
                     ...r,
                     email: u.email || "",
-                    organizerName: o.name || "",
+                    organizerName: o?.name || p?.name || "",
+                    role: u.role || "",
                 };
             });
 
@@ -129,6 +134,28 @@ router.patch(
                         },
                     }
                 );
+
+                // Email the new password to the appropriate address
+                try {
+                    const user = await collections.users.findOne({ _id: request.organizerUserId });
+                    let targetEmail = user?.email || "";
+
+                    if (user?.role === "organizer") {
+                        const orgProfile = await collections.organizers.findOne({ userId: user._id });
+                        if (orgProfile?.contactEmail) targetEmail = orgProfile.contactEmail;
+                    }
+
+                    if (targetEmail) {
+                        await sendMail({
+                            to: targetEmail,
+                            subject: "Your Password Has Been Reset",
+                            text: `Your password has been reset by the admin.\n\nYour new password is: ${newPassword}\n\nPlease log in and change it as soon as possible.`,
+                            html: `<p>Your password has been reset by the admin.</p><p>Your new password is: <strong>${newPassword}</strong></p><p>Please log in and change it as soon as possible.</p>`,
+                        });
+                    }
+                } catch (emailErr) {
+                    console.warn("Password reset email failed:", emailErr.message);
+                }
 
                 res.json({ message: "Password reset approved", newPassword });
             } else {

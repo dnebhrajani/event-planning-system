@@ -15,56 +15,114 @@ export default function MyEvents() {
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(null);
     const [activeTab, setActiveTab] = useState("upcoming");
+    const [openingFile, setOpeningFile] = useState(null);
+    const [cancellingId, setCancellingId] = useState(null);
+
+    const fetchEvents = async () => {
+        try {
+            const { data } = await api.get("/api/participant/my-events");
+            if (Array.isArray(data)) {
+                setCategories({ upcoming: data, normal: [], merch: [], completed: [], cancelled: [] });
+            } else {
+                setCategories({
+                    upcoming: Array.isArray(data.upcoming) ? data.upcoming : [],
+                    normal: Array.isArray(data.normal) ? data.normal : [],
+                    merch: Array.isArray(data.merch) ? data.merch : [],
+                    completed: Array.isArray(data.completed) ? data.completed : [],
+                    cancelled: Array.isArray(data.cancelled) ? data.cancelled : []
+                });
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        (async () => {
-            try {
-                const { data } = await api.get("/api/participant/my-events");
-                if (Array.isArray(data)) {
-                    setCategories({ upcoming: data, normal: [], merch: [], completed: [], cancelled: [] });
-                } else {
-                    setCategories({
-                        upcoming: Array.isArray(data.upcoming) ? data.upcoming : [],
-                        normal: Array.isArray(data.normal) ? data.normal : [],
-                        merch: Array.isArray(data.merch) ? data.merch : [],
-                        completed: Array.isArray(data.completed) ? data.completed : [],
-                        cancelled: Array.isArray(data.cancelled) ? data.cancelled : []
-                    });
-                }
-            } catch (err) {
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
-        })();
+        fetchEvents();
     }, []);
+
+    const handleViewFile = async (url) => {
+        if (!url) return;
+        if (url.toLowerCase().endsWith(".pdf") && url.includes("/authenticated/")) {
+            setOpeningFile(url);
+            try {
+                const { data } = await api.get('/api/forms/signed-url', { params: { url } });
+                window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+            } catch (err) {
+                console.error("Error fetching signed URL:", err);
+                alert("Failed to securely open PDF. Please try again.");
+            } finally {
+                setOpeningFile(null);
+            }
+        } else {
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+    };
+
+    const cancelRegistration = async (id) => {
+        if (!window.confirm("Are you sure you want to cancel this registration? This action cannot be undone.")) return;
+        setCancellingId(id);
+        try {
+            await api.post(`/api/participant/registrations/${id}/cancel`);
+            await fetchEvents();
+        } catch (err) {
+            console.error(err);
+            alert(err.response?.data?.error || "Failed to cancel registration");
+        } finally {
+            setCancellingId(null);
+        }
+    };
 
     const toggleQR = (id) => setExpanded((prev) => (prev === id ? null : id));
 
-    const renderRegistrationRow = (r) => (
-        <tr key={r.registrationId || r._id}>
-            <td className="font-medium">{r.event?.name}</td>
-            <td>{r.event?.organizerName}</td>
-            <td>{r.event?.startDate ? new Date(r.event.startDate).toLocaleDateString() : "-"}</td>
-            <td>
-                <code className="bg-base-300 px-2 py-0.5 rounded text-sm">{r.ticketId}</code>
-            </td>
-            <td>
-                <span className={`badge ${r.status === 'Cancelled' ? 'badge-error' : 'badge-outline'}`}>{r.status || r.event?.status}</span>
-            </td>
-            {QRCodeSVG && (
+    const renderRegistrationRow = (r) => {
+        const isPending = r.status === "PENDING";
+        return (
+            <tr key={r.registrationId || r._id}>
+                <td className="font-medium">{r.event?.name}</td>
+                <td>{r.event?.organizerName}</td>
+                <td>{r.event?.startDate ? new Date(r.event.startDate).toLocaleDateString() : "-"}</td>
                 <td>
-                    <button
-                        className="btn btn-ghost btn-xs"
-                        onClick={() => toggleQR(r.registrationId || r._id)}
-                        disabled={r.status === 'Cancelled'}
-                    >
-                        {expanded === (r.registrationId || r._id) ? "Hide" : "Show"}
-                    </button>
+                    {isPending ? (
+                        <span className="text-xs text-base-content/50">Pending</span>
+                    ) : (
+                        <code className="bg-base-300 px-2 py-0.5 rounded text-sm">{r.ticketId}</code>
+                    )}
                 </td>
-            )}
-        </tr>
-    );
+                <td>
+                    <span className={`badge ${r.status === 'cancelled' || r.status === 'rejected' ? 'badge-error' : isPending ? 'badge-warning' : 'badge-outline'}`}>{r.status || r.event?.status}</span>
+                </td>
+                <td>
+                    <div className="flex gap-2 items-center">
+                        {QRCodeSVG && (
+                            isPending ? (
+                                <span className="text-xs opacity-50">N/A</span>
+                            ) : (
+                                <button
+                                    className="btn btn-ghost btn-xs"
+                                    onClick={() => toggleQR(r.registrationId || r._id)}
+                                    disabled={r.status === 'cancelled' || r.status === 'rejected'}
+                                >
+                                    {expanded === (r.registrationId || r._id) ? "Hide" : "Show QR"}
+                                </button>
+                            )
+                        )}
+                        {(r.status !== 'cancelled' && r.status !== 'rejected' && r.event?.status !== 'Completed') && (
+                            <button
+                                className="btn btn-error btn-xs btn-outline"
+                                onClick={() => cancelRegistration(r.registrationId || r._id)}
+                                disabled={cancellingId === (r.registrationId || r._id)}
+                            >
+                                {cancellingId === (r.registrationId || r._id) ? <span className="loading loading-spinner loading-xs"></span> : "Cancel"}
+                            </button>
+                        )}
+                    </div>
+                </td>
+            </tr>
+        );
+    };
 
     const renderMerchRow = (o) => (
         <tr key={o._id || o.orderId}>
@@ -78,20 +136,21 @@ export default function MyEvents() {
             </td>
             <td>{o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "-"}</td>
             <td>
-                {o.tickets && o.tickets.length > 0 ? (
+                {o.ticketId ? (
                     <div className="flex flex-col gap-1">
-                        {o.tickets.map(t => <code key={t} className="bg-base-300 px-2 py-0.5 rounded text-xs">{t}</code>)}
+                        <code className="bg-base-300 px-2 py-0.5 rounded text-xs">{o.ticketId}</code>
                     </div>
                 ) : (
                     <span className="text-xs text-base-content/50">Pending</span>
                 )}
             </td>
+            <td>₹{o.totalAmount || 0}</td>
             <td>
                 <span className={`badge ${o.status === "APPROVED" ? "badge-success" : o.status === "REJECTED" ? "badge-error" : "badge-warning"} badge-sm`}>{o.status}</span>
             </td>
             {QRCodeSVG && (
                 <td>
-                    {o.tickets && o.tickets.length > 0 ? (
+                    {o.ticketId ? (
                         <button
                             className="btn btn-ghost btn-xs"
                             onClick={() => toggleQR(o._id || o.orderId)}
@@ -151,8 +210,13 @@ export default function MyEvents() {
                                         <th>{activeTab === "merch" || (activeTab === "cancelled" && currentItems[0]?.items) ? "Items Ordered" : "Organizer"}</th>
                                         <th>Date</th>
                                         <th>Ticket ID(s)</th>
+                                        {activeTab === "merch" && (
+                                            <>
+                                                <th>Total</th>
+                                            </>
+                                        )}
                                         <th>Status</th>
-                                        {QRCodeSVG && <th>QR</th>}
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>

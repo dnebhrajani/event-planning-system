@@ -19,7 +19,6 @@ const links = {
         { to: "/participant/profile", label: "Profile" },
         { to: "/participant/events", label: "Browse Events" },
         { to: "/participant/my-events", label: "My Events" },
-        { to: "/participant/merch-orders", label: "Merch Orders" },
     ],
 };
 

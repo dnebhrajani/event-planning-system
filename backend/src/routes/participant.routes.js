@@ -91,7 +91,7 @@ router.get("/events", async (req, res, next) => {
         const eventIds = events.map((e) => e._id);
         const regCounts = await collections.registrations
             .aggregate([
-                { $match: { eventId: { $in: eventIds } } },
+                { $match: { eventId: { $in: eventIds }, status: { $nin: ["cancelled", "rejected"] } } },
                 { $group: { _id: "$eventId", count: { $sum: 1 } } },
             ])
             .toArray();
@@ -151,7 +151,7 @@ router.get("/events/trending", async (req, res, next) => {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const top = await collections.registrations
             .aggregate([
-                { $match: { createdAt: { $gte: since } } },
+                { $match: { createdAt: { $gte: since }, status: { $nin: ["cancelled", "rejected"] } } },
                 { $group: { _id: "$eventId", count: { $sum: 1 } } },
                 { $sort: { count: -1 } },
                 { $limit: 5 },
@@ -199,12 +199,14 @@ router.get("/events/:eventId", async (req, res, next) => {
         // Count registrations
         const registrationCount = await collections.registrations.countDocuments({
             eventId: event._id,
+            status: { $nin: ["cancelled", "rejected"] }
         });
 
         // Check if participant is already registered
         const existingReg = await collections.registrations.findOne({
             eventId: event._id,
             participantId: new ObjectId(req.user.userId),
+            status: { $nin: ["cancelled", "rejected"] }
         });
 
         // Get participant profile for eligibility check
@@ -218,11 +220,12 @@ router.get("/events/:eventId", async (req, res, next) => {
             event.eligibility === participantType;
 
         const now = new Date();
+        const isDeadlinePassed = event.registrationDeadline ? now > new Date(event.registrationDeadline) : false;
         const registrationOpen =
-            status === "Published" &&
+            ["Published", "Ongoing"].includes(status) &&
             eligible &&
             !existingReg &&
-            (event.registrationDeadline ? now <= new Date(event.registrationDeadline) : true) &&
+            !isDeadlinePassed &&
             (event.registrationLimit ? registrationCount < event.registrationLimit : true);
 
         res.json({
@@ -232,6 +235,7 @@ router.get("/events/:eventId", async (req, res, next) => {
             eligible,
             alreadyRegistered: !!existingReg,
             registrationOpen,
+            isDeadlinePassed,
         });
     } catch (err) {
         next(err);
@@ -247,15 +251,17 @@ router.post("/events/:eventId/register", async (req, res, next) => {
         if (!event) return res.status(404).json({ error: "Event not found" });
 
         const status = computeStatus(event);
-        if (status !== "Published")
-            return res.status(400).json({ error: "Event is not open for registration" });
+        if (!["Published", "Ongoing"].includes(status))
+            return res.status(403).json({ error: "Registrations are closed for this event." });
 
         const now = new Date();
-        if (event.registrationDeadline && now > new Date(event.registrationDeadline))
-            return res.status(400).json({ error: "Registration deadline has passed" });
+        if (event.registrationDeadline && now > new Date(event.registrationDeadline)) {
+            return res.status(403).json({ error: "Registration deadline has passed." });
+        }
 
         const registrationCount = await collections.registrations.countDocuments({
             eventId: event._id,
+            status: { $nin: ["cancelled", "rejected"] }
         });
         if (event.registrationLimit && registrationCount >= event.registrationLimit)
             return res.status(400).json({ error: "Registration limit reached" });
@@ -320,14 +326,28 @@ router.post("/events/:eventId/register", async (req, res, next) => {
         }
 
         // Create registration (unique index prevents duplicates)
-        const ticketId = generateTicketId();
+        const isPaidNormalEvent = event.type !== "MERCH" && event.registrationFee > 0;
+        const registrationStatus = isPaidNormalEvent ? "PENDING" : "registered";
+        let ticketId = null;
+
+        if (!isPaidNormalEvent) {
+            ticketId = generateTicketId();
+        }
+
         const registration = {
             eventId: event._id,
             participantId: new ObjectId(req.user.userId),
-            ticketId,
-            status: "registered",
+            status: registrationStatus,
             createdAt: now,
         };
+
+        if (ticketId) registration.ticketId = ticketId;
+        if (isPaidNormalEvent) {
+            if (!req.body.paymentProofUrl) {
+                return res.status(400).json({ error: "Payment proof is required for paid events." });
+            }
+            registration.paymentProofUrl = req.body.paymentProofUrl;
+        }
 
         try {
             await collections.registrations.insertOne(registration);
@@ -335,7 +355,7 @@ router.post("/events/:eventId/register", async (req, res, next) => {
             if (dupErr.code === 11000) {
                 return res
                     .status(409)
-                    .json({ error: "You are already registered for this event" });
+                    .json({ error: "You are already registered or pending approval for this event" });
             }
             throw dupErr;
         }
@@ -350,92 +370,97 @@ router.post("/events/:eventId/register", async (req, res, next) => {
             });
         }
 
-        // Build QR payload
-        const qrPayload = JSON.stringify({
-            ticketId,
-            eventId: event._id.toString(),
-            participantId: req.user.userId,
-        });
-
-        // Store ticket
-        const ticket = {
-            ticketId,
-            registrationId: registration._id,
-            eventId: event._id,
-            participantId: new ObjectId(req.user.userId),
-            eventName: event.name,
-            participantName: `${profile.firstName} ${profile.lastName}`,
-            participantEmail: (
-                await collections.users.findOne({
-                    _id: new ObjectId(req.user.userId),
-                })
-            )?.email,
-            qrPayload,
-            createdAt: now,
-        };
-        await collections.tickets.insertOne(ticket);
-
-        // Try to send email (don't crash on failure)
+        // Only generate ticket and send email if not pending
+        let qrPayload;
         let emailSent = false;
-        try {
-            const qrBuffer = await QRCode.toBuffer(qrPayload, {
-                errorCorrectionLevel: 'M',
-                type: 'png',
-                margin: 2,
-                width: 200
+
+        if (!isPaidNormalEvent) {
+            // Build QR payload
+            qrPayload = JSON.stringify({
+                ticketId,
+                eventId: event._id.toString(),
+                participantId: req.user.userId,
             });
 
-            await sendMail({
-                to: ticket.participantEmail,
-                subject: `Ticket Confirmation — ${event.name}`,
-                text: [
-                    `Hi ${profile.firstName},`,
-                    ``,
-                    `You have successfully registered for "${event.name}".`,
-                    ``,
-                    `Ticket ID: ${ticketId}`,
-                    `Event: ${event.name}`,
-                    `Date: ${event.startDate ? new Date(event.startDate).toDateString() : "TBA"}`,
-                    ``,
-                    `Present this Ticket ID or QR code at the venue.`,
-                    ``,
-                    `— Event Management Platform`,
-                ].join("\n"),
-                html: `
-                    <div style="font-family: sans-serif; color: #333;">
-                        <p>Hi ${profile.firstName},</p>
-                        <p>You have successfully registered for "<strong>${event.name}</strong>".</p>
-                        
-                        <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #eee;">
-                            <p style="margin: 0 0 10px 0;"><strong>Ticket ID:</strong> ${ticketId}</p>
-                            <p style="margin: 0 0 10px 0;"><strong>Event:</strong> ${event.name}</p>
-                            <p style="margin: 0;"><strong>Date:</strong> ${event.startDate ? new Date(event.startDate).toDateString() : "TBA"}</p>
+            // Store ticket
+            const ticket = {
+                ticketId,
+                registrationId: registration._id,
+                eventId: event._id,
+                participantId: new ObjectId(req.user.userId),
+                eventName: event.name,
+                participantName: `${profile.firstName} ${profile.lastName}`,
+                participantEmail: (
+                    await collections.users.findOne({
+                        _id: new ObjectId(req.user.userId),
+                    })
+                )?.email,
+                qrPayload,
+                createdAt: now,
+            };
+            await collections.tickets.insertOne(ticket);
+
+            // Try to send email (don't crash on failure)
+            try {
+                const qrBuffer = await QRCode.toBuffer(qrPayload, {
+                    errorCorrectionLevel: 'M',
+                    type: 'png',
+                    margin: 2,
+                    width: 200
+                });
+
+                await sendMail({
+                    to: ticket.participantEmail,
+                    subject: `Ticket Confirmation — ${event.name}`,
+                    text: [
+                        `Hi ${profile.firstName},`,
+                        ``,
+                        `You have successfully registered for "${event.name}".`,
+                        ``,
+                        `Ticket ID: ${ticketId}`,
+                        `Event: ${event.name}`,
+                        `Date: ${event.startDate ? new Date(event.startDate).toDateString() : "TBA"}`,
+                        ``,
+                        `Present this Ticket ID or QR code at the venue.`,
+                        ``,
+                        `— Event Management Platform`,
+                    ].join("\n"),
+                    html: `
+                        <div style="font-family: sans-serif; color: #333;">
+                            <p>Hi ${profile.firstName},</p>
+                            <p>You have successfully registered for "<strong>${event.name}</strong>".</p>
+                            
+                            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #eee;">
+                                <p style="margin: 0 0 10px 0;"><strong>Ticket ID:</strong> ${ticketId}</p>
+                                <p style="margin: 0 0 10px 0;"><strong>Event:</strong> ${event.name}</p>
+                                <p style="margin: 0;"><strong>Date:</strong> ${event.startDate ? new Date(event.startDate).toDateString() : "TBA"}</p>
+                            </div>
+                            
+                            <p>Present this Ticket ID or the QR code below at the venue.</p>
+                            
+                            <div style="margin: 20px 0;">
+                                <img src="cid:qrcode" alt="Ticket QR Code" style="width: 200px; height: 200px; border: 1px solid #ddd; border-radius: 8px;" />
+                            </div>
+                            
+                            <p style="color: #666; font-size: 0.9em;">— Event Management Platform</p>
                         </div>
-                        
-                        <p>Present this Ticket ID or the QR code below at the venue.</p>
-                        
-                        <div style="margin: 20px 0;">
-                            <img src="cid:qrcode" alt="Ticket QR Code" style="width: 200px; height: 200px; border: 1px solid #ddd; border-radius: 8px;" />
-                        </div>
-                        
-                        <p style="color: #666; font-size: 0.9em;">— Event Management Platform</p>
-                    </div>
-                `,
-                attachments: [
-                    {
-                        filename: 'qrcode.png',
-                        content: qrBuffer,
-                        cid: 'qrcode'
-                    }
-                ]
-            });
-            emailSent = true;
-        } catch (_emailErr) {
-            console.warn("Email dispatch failed:", _emailErr.message);
+                    `,
+                    attachments: [
+                        {
+                            filename: 'qrcode.png',
+                            content: qrBuffer,
+                            cid: 'qrcode'
+                        }
+                    ]
+                });
+                emailSent = true;
+            } catch (_emailErr) {
+                console.warn("Email dispatch failed:", _emailErr.message);
+            }
         }
 
         res.status(201).json({
-            message: "Registration successful",
+            message: isPaidNormalEvent ? "Registration pending approval" : "Registration successful",
             ticketId,
             qrPayload,
             emailSent,
@@ -454,7 +479,7 @@ router.get("/my-events", async (req, res, next) => {
 
         // Normal registrations
         const registrations = await collections.registrations
-            .find({ participantId: userId })
+            .find({ participantId: userId, _source: { $ne: "MERCH_AUTO_REGISTRATION" } })
             .sort({ createdAt: -1 })
             .toArray();
 
@@ -503,14 +528,17 @@ router.get("/my-events", async (req, res, next) => {
                 },
             };
 
-            if (status === "Completed") {
-                completed.push(entry);
-            } else if (reg.status === "cancelled" || reg.status === "rejected") {
+            if (reg.status === "cancelled" || reg.status === "rejected") {
                 cancelled.push(entry);
+            } else if (status === "Completed") {
+                completed.push(entry);
             } else if (event.startDate && new Date(event.startDate) > now) {
                 upcoming.push(entry);
+            } else if (status === "Ongoing") {
+                upcoming.push(entry); // Push ongoing into active tab too
             }
-            // Always add to normal tab
+
+            // Always add to normal tab if not cancelled
             if (reg.status !== "cancelled" && reg.status !== "rejected") {
                 normal.push(entry);
             }
@@ -543,6 +571,51 @@ router.get("/my-events", async (req, res, next) => {
         }
 
         res.json({ upcoming, normal, merch, completed, cancelled });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─── POST /api/participant/registrations/:id/cancel ─────────────────────────
+router.post("/registrations/:id/cancel", async (req, res, next) => {
+    try {
+        const registrationId = new ObjectId(req.params.id);
+        const userId = new ObjectId(req.user.userId);
+
+        const registration = await collections.registrations.findOne({
+            _id: registrationId,
+            participantId: userId,
+        });
+
+        if (!registration) {
+            return res.status(404).json({ error: "Registration not found" });
+        }
+
+        if (registration._source === "MERCH_AUTO_REGISTRATION") {
+            return res.status(400).json({ error: "Cannot independently cancel merch registrations." });
+        }
+
+        if (registration.status === "cancelled" || registration.status === "rejected") {
+            return res.status(400).json({ error: "Registration is already cancelled or rejected" });
+        }
+
+        const event = await collections.events.findOne({ _id: registration.eventId });
+        if (event && computeStatus(event) === "Completed") {
+            return res.status(400).json({ error: "Cannot cancel registration for a completed event" });
+        }
+
+        // Cancel the registration
+        await collections.registrations.updateOne(
+            { _id: registrationId },
+            { $set: { status: "cancelled", updatedAt: new Date() } }
+        );
+
+        // Also invalidate the ticket if one exists
+        if (registration.ticketId) {
+            await collections.tickets.deleteOne({ ticketId: registration.ticketId });
+        }
+
+        res.json({ message: "Registration cancelled successfully" });
     } catch (err) {
         next(err);
     }

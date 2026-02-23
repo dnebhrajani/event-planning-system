@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { ObjectId } from "mongodb";
 import crypto from "crypto";
+import QRCode from "qrcode";
 import { collections } from "../config/db.js";
 import { authRequired, requireRole } from "../middleware/auth.js";
-import { sendMail } from "../utils/mailer.js";
+import { sendMail } from "../utils/email.js";
 
 const router = Router();
 
@@ -62,11 +63,29 @@ router.get(
                 }
             }
 
-            const merchItems = (event.merchItems || []).map((m) => ({
-                ...m,
-                userPurchased: purchasedQty[m.name] || 0,
-                remaining: m.perUserLimit ? Math.max(0, m.perUserLimit - (purchasedQty[m.name] || 0)) : null,
-            }));
+            const merchItems = (event.merchItems || []).map((m) => {
+                const userPurchased = purchasedQty[m.name] || 0;
+                // Normalize: support both 'stockQty' and legacy 'stock' field
+                const actualStock = m.stockQty ?? m.stock ?? null;
+                let remaining = null;
+                if (m.perUserLimit) {
+                    remaining = Math.max(0, m.perUserLimit - userPurchased);
+                }
+                // Cap remaining at available stock
+                if (actualStock !== null && actualStock !== undefined) {
+                    if (remaining !== null) {
+                        remaining = Math.min(remaining, actualStock);
+                    } else {
+                        remaining = actualStock;
+                    }
+                }
+                return {
+                    ...m,
+                    stockQty: actualStock,
+                    userPurchased,
+                    remaining,
+                };
+            });
 
             res.json({
                 _id: event._id,
@@ -148,11 +167,17 @@ router.post(
                     }
                 }
 
-                // Stock check (rough check; final check at approval time)
-                if (merch.stockQty !== undefined && merch.stockQty !== null) {
-                    if (qty > merch.stockQty) {
+                // Stock check — enforce available stock at order time
+                const orderStockVal = merch.stockQty ?? merch.stock ?? null;
+                if (orderStockVal !== null && orderStockVal !== undefined) {
+                    if (orderStockVal <= 0) {
                         return res.status(400).json({
-                            error: `Insufficient stock for "${merch.name}"`,
+                            error: `"${merch.name}" is out of stock`,
+                        });
+                    }
+                    if (qty > orderStockVal) {
+                        return res.status(400).json({
+                            error: `Insufficient stock for "${merch.name}". Available: ${orderStockVal}, requested: ${qty}`,
                         });
                     }
                 }
@@ -351,21 +376,23 @@ router.post(
                     return res.status(400).json({ error: `Item "${orderItem.name}" no longer exists` });
                 }
                 const merch = merchItems[idx];
-                if (merch.stockQty !== undefined && merch.stockQty !== null) {
-                    if (merch.stockQty < orderItem.quantity) {
+                // Support both 'stockQty' and legacy 'stock' field names
+                const stockField = merch.stockQty !== undefined ? 'stockQty' : (merch.stock !== undefined ? 'stock' : null);
+                const stockVal = stockField ? merch[stockField] : null;
+                if (stockField && stockVal !== null) {
+                    if (stockVal < orderItem.quantity) {
                         return res.status(400).json({
-                            error: `Insufficient stock for "${merch.name}". Available: ${merch.stockQty}, requested: ${orderItem.quantity}`,
+                            error: `Insufficient stock for "${merch.name}". Available: ${stockVal}, requested: ${orderItem.quantity}`,
                         });
                     }
-                    // Atomic decrement using positional update
+                    // Atomic decrement
                     const updateResult = await collections.events.updateOne(
                         {
                             _id: event._id,
-                            "merchItems.name": orderItem.name,
-                            "merchItems.stockQty": { $gte: orderItem.quantity },
+                            [`merchItems.${idx}.${stockField}`]: { $gte: orderItem.quantity },
                         },
                         {
-                            $inc: { "merchItems.$.stockQty": -orderItem.quantity },
+                            $inc: { [`merchItems.${idx}.${stockField}`]: -orderItem.quantity },
                             $set: { updatedAt: new Date() },
                         }
                     );
@@ -404,6 +431,28 @@ router.post(
                 { $set: { status: "APPROVED", ticketId, updatedAt: now } }
             );
 
+            // Force Merch Orders to act as Registrations for Native Analytics Tracking (Headcount & Revenue)
+            const regId = genTicketId(); // Borrowing standard utility locally for ID gen
+            await collections.registrations.updateOne(
+                { eventId: event._id, participantId: order.participantId },
+                {
+                    $setOnInsert: {
+                        registrationId: regId,
+                        eventId: event._id,
+                        participantId: order.participantId,
+                        createdAt: now,
+                        formAnswers: {}, // Blank for Merch
+                        _source: "MERCH_AUTO_REGISTRATION" // Safe auditing tag
+                    },
+                    $set: {
+                        ticketId, // Binds precisely to the newly generated MERCH ticket
+                        updatedAt: now,
+                        paymentProofUrl: order.paymentProofUrl || null,
+                    }
+                },
+                { upsert: true }
+            );
+
             // Try email
             let emailSent = false;
             try {
@@ -412,19 +461,52 @@ router.post(
                     userId: order.participantId,
                 });
                 if (user?.email) {
+                    const qrBuffer = await QRCode.toBuffer(qrPayload, {
+                        errorCorrectionLevel: 'M',
+                        type: 'png',
+                        margin: 2,
+                        width: 200
+                    });
+
                     await sendMail({
                         to: user.email,
-                        subject: `Order Approved - ${event.name}`,
+                        subject: `Order Approved — ${event.name}`,
                         text: [
                             `Hi ${profile?.firstName || ""},`,
-                            "",
+                            ``,
                             `Your merch order (${order.orderId}) for "${event.name}" has been approved.`,
                             `Ticket ID: ${ticketId}`,
-                            "",
-                            "Present this ticket at the venue.",
-                            "",
-                            "-- Event Management Platform",
+                            ``,
+                            `Present this Ticket ID or QR code at the venue.`,
+                            ``,
+                            `— Event Management Platform`,
                         ].join("\n"),
+                        html: `
+                            <div style="font-family: sans-serif; color: #333;">
+                                <p>Hi ${profile?.firstName || ""},</p>
+                                <p>Your merch order (<strong>${order.orderId}</strong>) for "<strong>${event.name}</strong>" has been approved.</p>
+                                
+                                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #eee;">
+                                    <p style="margin: 0 0 10px 0;"><strong>Ticket ID:</strong> ${ticketId}</p>
+                                    <p style="margin: 0 0 10px 0;"><strong>Event:</strong> ${event.name}</p>
+                                </div>
+                                
+                                <p>Present this Ticket ID or the QR code below at the venue.</p>
+                                
+                                <div style="margin: 20px 0;">
+                                    <img src="cid:qrcode" alt="Ticket QR Code" style="width: 200px; height: 200px; border: 1px solid #ddd; border-radius: 8px;" />
+                                </div>
+                                
+                                <p style="color: #666; font-size: 0.9em;">— Event Management Platform</p>
+                            </div>
+                        `,
+                        attachments: [
+                            {
+                                filename: 'qrcode.png',
+                                content: qrBuffer,
+                                cid: 'qrcode'
+                            }
+                        ]
                     });
                     emailSent = true;
                 }

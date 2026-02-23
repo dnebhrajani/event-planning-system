@@ -276,8 +276,9 @@ export default function AdminDashboard() {
                                 <table className="table table-zebra w-full">
                                     <thead>
                                         <tr>
-                                            <th>Organizer</th>
+                                            <th>Name</th>
                                             <th>Email</th>
+                                            <th>Role</th>
                                             <th>Status</th>
                                             <th>Requested</th>
                                             <th>Actions</th>
@@ -288,6 +289,7 @@ export default function AdminDashboard() {
                                             <tr key={r._id}>
                                                 <td>{r.organizerName}</td>
                                                 <td className="text-sm">{r.email}</td>
+                                                <td><span className="badge badge-sm badge-outline">{r.role}</span></td>
                                                 <td>
                                                     <span className={`badge badge-sm ${r.status === 'pending' ? 'badge-warning' :
                                                         r.status === 'approved' ? 'badge-success' : 'badge-error'

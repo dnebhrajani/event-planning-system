@@ -12,6 +12,7 @@ import ManageEvent from "./pages/organizer/ManageEvent.jsx";
 import Attendance from "./pages/organizer/Attendance.jsx";
 import FormBuilder from "./pages/organizer/FormBuilder.jsx";
 import MerchOrdersManage from "./pages/organizer/MerchOrdersManage.jsx";
+import RegistrationApprovalsManage from "./pages/organizer/RegistrationApprovalsManage.jsx";
 import BrowseEvents from "./pages/participant/BrowseEvents.jsx";
 import EventDetails from "./pages/participant/EventDetails.jsx";
 import MyEvents from "./pages/participant/MyEvents.jsx";
@@ -19,7 +20,6 @@ import Profile from "./pages/participant/Profile.jsx";
 import Onboarding from "./pages/participant/Onboarding.jsx";
 import Organizers from "./pages/participant/Organizers.jsx";
 import OrganizerDetail from "./pages/participant/OrganizerDetail.jsx";
-import MerchOrders from "./pages/participant/MerchOrders.jsx";
 import Forum from "./pages/Forum.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
@@ -86,6 +86,14 @@ export default function App() {
                 element={
                     <ProtectedRoute allowedRoles={["organizer"]}>
                         <ManageEvent />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/organizer/events/:eventId/registration-approvals"
+                element={
+                    <ProtectedRoute allowedRoles={["organizer"]}>
+                        <RegistrationApprovalsManage />
                     </ProtectedRoute>
                 }
             />
@@ -163,6 +171,14 @@ export default function App() {
                     </ProtectedRoute>
                 }
             />
+            <Route
+                path="/participant/organizers/:organizerId"
+                element={
+                    <ProtectedRoute allowedRoles={["participant"]}>
+                        <OrganizerDetail />
+                    </ProtectedRoute>
+                }
+            />
             {import.meta.env.DEV && (
                 <>
                     <Route
@@ -183,14 +199,6 @@ export default function App() {
                     />
                 </>
             )}
-            <Route
-                path="/participant/merch-orders"
-                element={
-                    <ProtectedRoute allowedRoles={["participant"]}>
-                        <MerchOrders />
-                    </ProtectedRoute>
-                }
-            />
 
             {/* Shared */}
             <Route

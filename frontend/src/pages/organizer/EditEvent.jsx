@@ -12,6 +12,7 @@ export default function EditEvent() {
     const [error, setError] = useState("");
     const [status, setStatus] = useState("");
     const [organizerId, setOrganizerId] = useState("");
+    const [statusOverride, setStatusOverride] = useState(""); // Added statusOverride state
     const [merchItems, setMerchItems] = useState([]);
 
     useEffect(() => {
@@ -25,7 +26,11 @@ export default function EditEvent() {
                 const ev = eventsRes.data.find((e) => e._id === eventId);
                 if (!ev) { setError("Event not found"); return; }
                 setStatus(ev.status);
-                setMerchItems(ev.merchItems || []);
+                setStatusOverride(ev.statusOverride || ""); // Keep empty string if no override exists
+                setMerchItems((ev.merchItems || []).map(m => ({
+                    ...m,
+                    stock: m.stock ?? m.stockQty ?? "",
+                })));
                 setForm({
                     name: ev.name || "",
                     type: ev.type || "NORMAL",
@@ -80,26 +85,44 @@ export default function EditEvent() {
 
         setSaving(true);
         try {
-            const payload = { ...form };
-            if (payload.tags) {
-                payload.tags = payload.tags.split(",").map((t) => t.trim()).filter(Boolean);
-            } else {
-                payload.tags = [];
-            }
-            if (payload.registrationLimit === "") delete payload.registrationLimit;
-            else payload.registrationLimit = Number(payload.registrationLimit);
-            if (payload.registrationFee === "") delete payload.registrationFee;
-            else payload.registrationFee = Number(payload.registrationFee);
+            let payload = {};
+            const isOngoingOrCompleted = ["Ongoing", "Completed", "Closed"].includes(status);
+            const isPublished = status === "Published";
 
-            if (form.type === "MERCH") {
-                payload.merchItems = merchItems.map((m) => ({
-                    name: m.name,
-                    price: Number(m.price),
-                    stock: Number(m.stock),
-                    perUserLimit: Number(m.perUserLimit)
-                }));
+            if (isOngoingOrCompleted) {
+                // strict payload for ongoing/completed
+                payload = { statusOverride };
+            } else if (isPublished) {
+                // strict payload for published
+                payload = {
+                    description: form.description,
+                    registrationDeadline: new Date(form.registrationDeadline).toISOString(),
+                    registrationLimit: form.registrationLimit === "" ? undefined : Number(form.registrationLimit),
+                    statusOverride: statusOverride || undefined
+                };
             } else {
-                payload.merchItems = []; // clear if somehow switched to NORMAL
+                // full payload for draft
+                payload = { ...form };
+                if (payload.tags) {
+                    payload.tags = payload.tags.split(",").map((t) => t.trim()).filter(Boolean);
+                } else {
+                    payload.tags = [];
+                }
+                if (payload.registrationLimit === "") delete payload.registrationLimit;
+                else payload.registrationLimit = Number(payload.registrationLimit);
+                if (payload.registrationFee === "") delete payload.registrationFee;
+                else payload.registrationFee = Number(payload.registrationFee);
+
+                if (form.type === "MERCH") {
+                    payload.merchItems = merchItems.map((m) => ({
+                        name: m.name,
+                        price: Number(m.price),
+                        stockQty: Number(m.stock),
+                        perUserLimit: Number(m.perUserLimit)
+                    }));
+                } else {
+                    payload.merchItems = []; // clear if somehow switched to NORMAL
+                }
             }
 
             await api.patch(`/api/organizer/events/${eventId}`, payload);
@@ -151,11 +174,15 @@ export default function EditEvent() {
                 payload.merchItems = merchItems.map((m) => ({
                     name: m.name,
                     price: Number(m.price),
-                    stock: Number(m.stock),
+                    stockQty: Number(m.stock),
                     perUserLimit: Number(m.perUserLimit)
                 }));
             } else {
                 payload.merchItems = [];
+            }
+
+            if (statusOverride) {
+                payload.statusOverride = statusOverride;
             }
 
             await api.patch(`/api/organizer/events/${eventId}`, payload);
@@ -191,6 +218,7 @@ export default function EditEvent() {
     }
 
     const isDraft = status === "Draft";
+    const isOngoingOrCompleted = ["Ongoing", "Completed", "Closed"].includes(status);
 
     return (
         <div className="min-h-screen bg-base-200">
@@ -206,9 +234,25 @@ export default function EditEvent() {
 
                 <div className="card bg-base-100 shadow">
                     <div className="card-body space-y-3">
-                        <div className="form-control">
-                            <label className="label"><span className="label-text">Organizer ID</span></label>
-                            <input type="text" className="input input-bordered w-full bg-base-200" value={organizerId} disabled />
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="form-control">
+                                <label className="label"><span className="label-text">Organizer ID</span></label>
+                                <input type="text" className="input input-bordered w-full bg-base-200" value={organizerId} disabled />
+                            </div>
+                            {!isDraft && (
+                                <div className="form-control">
+                                    <label className="label"><span className="label-text text-warning font-semibold">Change Status Override</span></label>
+                                    <select
+                                        className="select select-bordered w-full"
+                                        value={statusOverride}
+                                        onChange={(e) => setStatusOverride(e.target.value)}
+                                    >
+                                        <option value="" disabled>-- Select Override ({status}) --</option>
+                                        <option value="Closed">Closed</option>
+                                        <option value="Completed">Completed</option>
+                                    </select>
+                                </div>
+                            )}
                         </div>
 
                         <div className="form-control">
@@ -236,7 +280,7 @@ export default function EditEvent() {
 
                         <div className="form-control">
                             <label className="label"><span className="label-text">Description *</span></label>
-                            <textarea name="description" className="textarea textarea-bordered w-full" rows={3} value={form.description} onChange={handleChange} required />
+                            <textarea name="description" className="textarea textarea-bordered w-full" rows={3} value={form.description} onChange={handleChange} disabled={isOngoingOrCompleted} required />
                         </div>
 
                         <div className="grid grid-cols-3 gap-3">
@@ -250,14 +294,14 @@ export default function EditEvent() {
                             </div>
                             <div className="form-control">
                                 <label className="label"><span className="label-text">Reg. Deadline *</span></label>
-                                <input type="datetime-local" name="registrationDeadline" className="input input-bordered w-full" value={form.registrationDeadline} onChange={handleChange} required />
+                                <input type="datetime-local" name="registrationDeadline" className="input input-bordered w-full" value={form.registrationDeadline} onChange={handleChange} disabled={isOngoingOrCompleted} required />
                             </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
                             <div className="form-control">
                                 <label className="label"><span className="label-text">Registration Limit *</span></label>
-                                <input type="number" name="registrationLimit" className="input input-bordered w-full" value={form.registrationLimit} onChange={handleChange} min="1" required />
+                                <input type="number" name="registrationLimit" className="input input-bordered w-full" value={form.registrationLimit} onChange={handleChange} disabled={isOngoingOrCompleted} min="1" required />
                             </div>
                             <div className="form-control">
                                 <label className="label"><span className="label-text">Registration Fee *</span></label>
@@ -272,7 +316,7 @@ export default function EditEvent() {
 
                         {form.type === "MERCH" && (
                             <div className="border border-base-300 rounded-box p-4 bg-base-200/50 mt-4">
-                                <h3 className="font-semibold text-lg mb-2">Merchandise Items *</h3>
+                                <h3 className="font-semibold text-lg mb-2">Merchandise Item * (Max 1)</h3>
                                 {merchItems.length === 0 && (
                                     <p className="text-sm text-base-content/60 mb-2">Please add at least one item.</p>
                                 )}
@@ -362,6 +406,7 @@ export default function EditEvent() {
                                         type="button"
                                         className="btn btn-sm btn-outline mt-3"
                                         onClick={() => setMerchItems([...merchItems, { name: "", price: "", stock: "", perUserLimit: "" }])}
+                                        disabled={merchItems.length >= 1}
                                     >
                                         + Add Item
                                     </button>

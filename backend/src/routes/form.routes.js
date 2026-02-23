@@ -31,6 +31,7 @@ router.put(
             // Schema locking: reject edits if at least one registration exists
             const regCount = await collections.registrations.countDocuments({
                 eventId: event._id,
+                status: { $nin: ["cancelled", "rejected"] }
             });
             if (regCount > 0) {
                 return res.status(409).json({
@@ -83,7 +84,10 @@ router.get(
             // If the requester is an organizer, include lock status
             let locked = false;
             if (req.user.role === "organizer") {
-                const regCount = await collections.registrations.countDocuments({ eventId });
+                const regCount = await collections.registrations.countDocuments({
+                    eventId,
+                    status: { $nin: ["cancelled", "rejected"] }
+                });
                 locked = regCount > 0;
             }
 
