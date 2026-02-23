@@ -6,6 +6,7 @@ const api = axios.create({
 });
 
 // Attach JWT to every request if available
+// ensure that the token is not expired
 api.interceptors.request.use((config) => {
     const token = getToken();
     if (token) {
